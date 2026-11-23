@@ -11,7 +11,7 @@ npm run dev   # open http://localhost:5178 (YouTube blocks some videos on 127.0.
 
 ## Discs
 
-Click the disc (or press `o`) to **burn a disc**: name it, pick its colour, add tracks from YouTube, SoundCloud and Spotify links and local files (one disc can mix them), drag them into order, and burn. The disc is printed with its title and track list, numbered as the TRACK display counts them, so the numpad can jump to any track. Clicking the disc again opens it for editing. Press `?` for the keyboard map.
+Click the disc (or press `o`) to **burn a disc**: name it, pick its colour, add tracks from YouTube, SoundCloud and Spotify links and local files (one disc can mix them), drag them into order, and burn. The disc is printed with its title and track list, numbered as the TRACK display counts them, so the numpad can jump to any track. Clicking the disc again opens it for editing. **Save disc** keeps a copy in this browser, including the local audio. On either deck, choose it from **saved discs** and press **burn** to load it. Press `?` for the keyboard map.
 
 | Source | Loads | Varispeed | Level | VU | Rip | Auto BPM |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -48,7 +48,7 @@ Playback through the SDK needs Spotify Premium.
 | VARISPEED | 50–150 %, drag up/down, double-click resets |
 | LEVEL | output level (BT volume while connected), drag up/down |
 | numpad + T | type a track; T cycles track → min → sec; ENTER plays from there; C cancels |
-| CUE 1–3 | set while playing, press to jump, hold to clear. Remembered for the last 40 discs (not for local files, like MP3 discs) |
+| CUE 1–3 | set while playing, press to jump, hold to clear. Remembered for the last 40 discs (save local compilations before burning to remember their cues) |
 | BT | hold: scan and pair; press: connect / disconnect (simulated radio) |
 | ENTER + ▶▶ | repeat: one / all / off |
 | ENTER + PLAY | start sync (auto BPM on local files); while syncing, tap tempo |
@@ -63,7 +63,7 @@ enter, esc, `q` `w` `e` cues, `b` bluetooth, `o` load disc, `p` power. The knobs
 
 ## K.O.-sidekick mixer (optional)
 
-Press `m` to put an EP-136 K.O.-sidekick beside the deck (remembered between visits). The BC-1 plays into channel 1; channel 2 has no source yet.
+Press `m` to switch between a solo deck and the two-deck Sidekick rig. The left and right decks start on channels 1 and 2 respectively.
 
 A patch cable runs from the BC-1's OUTPUT to the sidekick's CH 1 input. Drag either plug out to unplug it (the deck goes silent), and drop the mixer end on CH 1, CH 2 or AUX (AUX skips the channel strip).
 
@@ -75,7 +75,7 @@ The EQ, compressor, pan, gain boost, cue and effects process **local files only*
 | HIGH / MID / LOW | EQ. Style is set in system settings: DJ (isolator: full left kills the band), studio (±12 dB), param (±15 dB, narrower mid). Double-click resets |
 | CUE | sends the channel, before its FX and fader, to the cue output. Both CUEs: main mix to cue. Cue output device is chosen in system settings |
 | fader | channel level. SELECT + fader shows the value |
-| FX | focus that channel's effect. Hold FX + move MOD: pick filter, delay, tape, loop, tremolo or siren. Hold both FX: drive both effects. SELECT + both FX: serial mode (main mix through FX 1 then FX 2) |
+| FX | click to open that channel’s effect menu, then drag MOD to choose an effect. Click the same FX button again to return to the previous screen. Hold both FX: drive both effects. SELECT + both FX: serial mode (main mix through FX 1 then FX 2) |
 | MOD stick, force pad | play the effect (see below). With a mouse, a pad press starts at medium pressure and dragging up presses harder; pens and touchscreens send real pressure |
 | SELECT | while playing an effect: lock it. Hold SELECT and play MOD / pad: record a looping FX sequence (rounded to whole beats); moving MOD or pad again stops it |
 | SELECT + CUE | tempo screen: tap CUE for tap tempo, hold CUE for auto BPM (local files) |

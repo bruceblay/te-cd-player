@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useSyncExternalStore, useLayoutEffect, useRef, useState } from 'react'
 import type { Deck, DeckState } from '../engine/deck'
 import { readout } from '../engine/display'
 import { Jog, Key, Knob, Led, Print, U, VU, pos, u } from './controls'
@@ -34,13 +34,16 @@ const GROUPS = [118.5, 152, 185.5, 219] // TRACK INDEX MIN SEC
 
 export function Device({
   deck,
-  s,
+  index, output, onSelect,
   onOpenLid,
 }: {
   deck: Deck
-  s: DeckState
+  index: number
+  output: string
+  onSelect: () => void
   onOpenLid: () => void
 }) {
+  const s = useSyncExternalStore(deck.subscribe, deck.getState)
   const wrap = useRef<HTMLDivElement>(null)
   const [k, setK] = useState(1)
   // measured before first paint, so the faceplate never shows at full size for a frame
@@ -57,11 +60,17 @@ export function Device({
   const on = s.power === 'on'
   const vu: [number, number] = s.batteryCheck ? [s.battery, s.battery] : on ? s.vu : [0, 0]
   const spinning = on && s.transport === 'playing'
-  const spinSecs = 1.6 / (s.vari / 100)
+  useLayoutEffect(() => {
+    // Keep the rotation period fixed. Retiming its duration would reinterpret
+    // every elapsed revolution at the new speed and jump to a different angle.
+    for (const rotor of wrap.current!.querySelectorAll('.disc-face, .tt-spin')) {
+      for (const animation of rotor.getAnimations()) animation.updatePlaybackRate(s.vari / 100)
+    }
+  }, [s.vari])
   const bt = BT_LED[on ? s.bt : 'off']
 
   return (
-    <div className="device-wrap" ref={wrap}>
+    <div className="device-wrap" data-deck={index} role="group" aria-label={`Deck ${index + 1}`} onFocusCapture={onSelect} onPointerDownCapture={onSelect} ref={wrap}>
       <div
         className={`device ${on ? 'powered' : ''}`}
         style={{ width: u(PW), height: u(PH), transform: `scale(${k})`, ['--u' as string]: `${U}px` }}
@@ -70,12 +79,12 @@ export function Device({
         <span className="hole" style={pos(143 - 25, 269 - 25, 50, 50)} />
         <span className="hole" style={pos(328.5 - 27.5, 84.5 - 27.5, 55, 55)} />
         <PlateArt />
-        <Turntable x={CX} y={CY} r={40} spin={spinning} secs={spinSecs} />
+        <Turntable x={CX} y={CY} r={40} spin={spinning} />
 
         {/* ---------- top edge: ports, BT, power ---------- */}
         <Print x={22} y={4}>OUTPUT</Print>
         {/* where a patch cable plugs in (the jack is on the top edge) */}
-        <span className="jack-anchor" data-jack="bc1-out" style={pos(27, 0, 12, 1)} />
+        <span className="jack-anchor" data-jack={output} style={pos(27, 0, 12, 1)} />
         <Led x={63.5} y={5.6} {...bt} />
         <Print x={68.5} y={4}>BT</Print>
         <button
@@ -113,7 +122,7 @@ export function Device({
           className={`disc ${s.disc ? 'printed' : 'empty'}`}
           style={pos(CX - DISC_R, CY - DISC_R, DISC_R * 2, DISC_R * 2)}
         >
-          <div className={`disc-face ${spinning ? 'spin' : ''}`} style={{ animationDuration: `${spinSecs}s` }}>
+          <div className={`disc-face ${spinning ? 'spin' : ''}`}>
             {s.disc && <DiscPrint disc={s.disc} />}
           </div>
           <span className="disc-shine" />

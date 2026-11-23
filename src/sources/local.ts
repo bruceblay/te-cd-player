@@ -42,6 +42,9 @@ export class LocalSource implements Source {
     this.el.preservesPitch = false // true varispeed: pitch follows speed
     const src = this.ctx.createMediaElementSource(this.el)
     const split = this.ctx.createChannelSplitter(2)
+    // Upmix mono to the same L/R pair sent to the speakers, meter and recorder.
+    this.gain.channelCount = 2
+    this.gain.channelCountMode = 'explicit'
     src.connect(this.gain)
     this.gain.connect(out)
     this.gain.connect(split)

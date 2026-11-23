@@ -333,12 +333,13 @@ export class Deck {
     const src = this.source
     void src.cue(track, at, play).then(() => {
       // a burned disc can switch players between tracks: what this one can do may differ
-      if (src !== this.source) return
+      if (src !== this.source || track !== this.s.track) return
       this.set({ caps: src.caps })
+      this.applyVolume()
+      if (changed && this.s.sync.on && src.caps.beatDetect) void this.detectTempo()
       this.applyRate(true)
     })
     if (play) this.clockStart()
-    if (changed && this.s.sync.on && this.s.caps?.beatDetect) void this.detectTempo()
   }
 
   pressPlay() {

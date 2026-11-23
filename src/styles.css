@@ -115,32 +115,11 @@ button {
   top: 0;
   pointer-events: none;
 }
-.mech-print {
-  font: 500 3.6px 'Barlow', sans-serif;
-  fill: #c9cacb;
-  letter-spacing: 0.02em;
-}
 .mech-warn {
   font: 500 2.5px 'Barlow', sans-serif;
   fill: #b9babc;
   letter-spacing: 0.03em;
 }
-.cd-mark {
-  fill: #2d2e2f;
-}
-.cd-small {
-  font: 600 3.1px 'Barlow', sans-serif;
-  letter-spacing: 0.04em;
-}
-.cd-disc {
-  font: 800 17px 'Arial Black', 'Helvetica Neue', Arial, sans-serif;
-  fill: none;
-  stroke: #2d2e2f;
-  stroke-width: 0.55;
-  paint-order: stroke;
-  letter-spacing: -0.04em;
-}
-
 /* printed legends on the plate */
 .print {
   font-size: calc(var(--u) * 4);
@@ -447,7 +426,8 @@ button {
   animation-play-state: running;
 }
 .disc.empty {
-  display: none;
+  /* Keep the hidden face on the same animation timeline as the spindle. */
+  visibility: hidden;
 }
 /* silver data area outside the clear hub */
 .disc::before {
@@ -600,17 +580,6 @@ button {
   margin: 0;
 }
 
-@media (max-width: 760px) {
-  .rig {
-    grid-template-columns: 1fr;
-    width: min(calc(100vw - 32px), 740px);
-    gap: 24px;
-  }
-  .sidekick-wrap {
-    grid-column: 1;
-  }
-}
-
 /* ------------------------------------------------------------ sidekick (EP-136) */
 /* sizes in its own plate units (202 x 552); scaled to the BC-1's real size */
 
@@ -625,12 +594,10 @@ button {
   width: min(calc(100vw - 32px), calc((100dvh - 56px) * 370 / 511));
 }
 .rig {
-  /* BC-1 174 mm, gap, sidekick 88 mm: both 240 mm tall */
-  grid-template-columns: 740fr 44fr 374fr;
-  /* room above for the patch cable's arc */
+  grid-template-columns: 740fr 44fr 374fr 44fr 740fr;
   position: relative;
-  margin-top: 64px;
-  width: min(calc(100vw - 32px), calc((100dvh - 120px) * 1158 / 1022));
+  margin-top: clamp(28px, 6vw, 94px);
+  width: min(calc(100vw - 32px), calc((100dvh - 150px) * 1942 / 1022));
 }
 .jack-anchor {
   pointer-events: none;
@@ -671,6 +638,19 @@ button {
 .rig .device-wrap {
   grid-column: 1;
   width: 100%;
+}
+.rig .device-wrap,
+.rig .sidekick-wrap {
+  grid-row: 1;
+}
+.rig [data-deck='1'] {
+  grid-column: 5;
+}
+.cable .plug {
+  touch-action: none;
+}
+.plug.inserted .plug-tip {
+  visibility: hidden;
 }
 .sidekick-wrap {
   grid-column: 3;
@@ -816,36 +796,11 @@ button {
 .sk-lid > * {
   position: absolute;
 }
-.sk-logo {
-  font-size: calc(var(--u) * 27);
-  font-weight: 200;
-  letter-spacing: 0.01em;
-  line-height: 1;
-  color: #262626;
-}
-.sk-dash {
-  background: #262626;
-}
-.sk-sub {
-  font-size: calc(var(--u) * 11.5);
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  color: #262626;
-}
-.sk-jp {
-  font-size: calc(var(--u) * 13);
-  font-weight: 400;
-  line-height: 1;
-  color: #ff5a1f;
-  letter-spacing: 0.06em;
-}
-.sk-model {
-  font-size: calc(var(--u) * 9.6);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0.03em;
-  color: #262626;
+.sk-lid-print {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 /* corner screw recesses: a faint ring in the lid */
 .sk-screw {
@@ -1140,9 +1095,6 @@ button {
 .lid :focus-visible {
   outline: none;
 }
-.lid form {
-  margin: 0;
-}
 .lid-head {
   display: flex;
   justify-content: space-between;
@@ -1181,19 +1133,9 @@ button {
 .lid-input::placeholder {
   color: #aeaba3;
 }
-.lid-sources {
-  display: flex;
-  gap: 16px;
+.lid-error {
   margin: 8px 0 0;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: #b3b0a8;
-  min-height: 1em;
-}
-.lid-sources .on {
-  color: var(--ink);
-}
-.lid-sources .bad {
+  font-size: 13px;
   color: #b3261a;
 }
 .lid-note {
@@ -1202,7 +1144,25 @@ button {
   line-height: 1.45;
   color: var(--ink-soft);
 }
+.saved-discs {
+  margin-left: auto;
+  max-width: 45%;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+}
+.disc-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.disc-actions .lid-text:disabled {
+  opacity: .45;
+  cursor: default;
+}
 .lid-actions {
+  flex-wrap: wrap;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1358,10 +1318,8 @@ button {
 .burn-x:hover {
   color: var(--ink);
 }
-.burn-empty {
-  margin: 10px 0 0;
-  font-size: 13px;
-  color: #aeaba3;
+.burn-list:empty {
+  display: none;
 }
 .burn-add {
   display: flex;

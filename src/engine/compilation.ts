@@ -18,6 +18,7 @@ export type Item =
   | { kind: 'local'; key: string; file: File; title: string; duration?: number }
 
 export interface Compilation {
+  savedId?: string
   title: string
   color: string
   items: Item[]
@@ -186,8 +187,8 @@ export class CompilationSource implements Source {
   }
   get caps(): Capabilities {
     const c = this.active?.caps ?? IDLE_CAPS
-    // cue markers survive only if every track can be found again (local files can't)
-    return { ...c, persistCues: !this.comp.items.some((i) => i.kind === 'local') }
+    // Saved discs retain local files and track keys across sessions.
+    return { ...c, persistCues: !!this.comp.savedId || !this.comp.items.some((i) => i.kind === 'local') }
   }
 
   async load(): Promise<DiscInfo> {
@@ -195,8 +196,10 @@ export class CompilationSource implements Source {
     const first = this.slots[0]
     this.active = await this.ensure(first.child)
     await this.active.cue(first.index, 0, false)
+    const duration = this.active.duration()
+    if (duration > 0) this.comp.items[0].duration = duration
     return {
-      id: `mix:${this.comp.items.map((i) => (i.kind === 'youtube' ? i.id : i.kind === 'soundcloud' ? `${i.url}#${i.index}` : i.kind === 'spotify' ? i.uri : i.file.name)).join('|')}`.slice(0, 400),
+      id: this.comp.savedId ? JSON.stringify([this.comp.savedId, ...this.comp.items.map(i => i.key)]) : `mix:${this.comp.items.map((i) => (i.kind === 'youtube' ? i.id : i.kind === 'soundcloud' ? `${i.url}#${i.index}` : i.kind === 'spotify' ? i.uri : i.file.name)).join('|')}`.slice(0, 400),
       kind: 'mix',
       title: this.comp.title,
       color: this.comp.color,

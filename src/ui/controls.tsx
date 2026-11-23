@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
 /**
  * Everything on the faceplate is placed in the units of teenage engineering's
@@ -165,8 +165,25 @@ export function Knob({
 }
 
 /** spring-loaded stick in a slot: drag sideways; distance sets 2x / 4x / 8x */
-export function Jog({ x, y, w, h, value, onChange }: { x: number; y: number; w: number; h: number; value: number; onChange: (v: number) => void }) {
-  const start = useRef<number | null>(null)
+export function Jog({ x, y, w, h, value, label = 'jog', onChange }: { x: number; y: number; w: number; h: number; value: number; label?: string; onChange: (v: number) => void }) {
+  const drag = useRef<{ id: number; x: number } | null>(null)
+  const change = useRef(onChange)
+  change.current = onChange
+  const release = (id: number) => {
+    if (drag.current?.id !== id) return
+    drag.current = null
+    change.current(0)
+  }
+  useEffect(() => {
+    const cancel = () => {
+      if (drag.current) release(drag.current.id)
+    }
+    window.addEventListener('blur', cancel)
+    return () => {
+      window.removeEventListener('blur', cancel)
+      cancel()
+    }
+  }, [])
   const travel = u((w - h) / 2)
   // the stick barely moves; the pointer gets a longer throw than the cap
   const throwPx = 60
@@ -176,27 +193,24 @@ export function Jog({ x, y, w, h, value, onChange }: { x: number; y: number; w: 
         className="jog-cap"
         role="slider"
         tabIndex={0}
-        aria-label="jog"
+        aria-label={label}
         aria-valuemin={-1}
         aria-valuemax={1}
         aria-valuenow={value}
         style={{ width: u(h - 3), height: u(h - 3), left: `calc(50% - ${u((h - 3) / 2)}px)`, top: u(1.5), transform: `translateX(${value * travel}px)` }}
         onPointerDown={(e) => {
+          if (e.button !== 0 || drag.current) return
           e.currentTarget.setPointerCapture(e.pointerId)
-          start.current = e.clientX
+          drag.current = { id: e.pointerId, x: e.clientX }
         }}
         onPointerMove={(e) => {
-          if (start.current == null) return
-          onChange(Math.max(-1, Math.min(1, (e.clientX - start.current) / throwPx)))
+          if (drag.current?.id !== e.pointerId) return
+          if (!(e.buttons & 1)) return release(e.pointerId)
+          onChange(Math.max(-1, Math.min(1, (e.clientX - drag.current.x) / throwPx)))
         }}
-        onPointerUp={() => {
-          start.current = null
-          onChange(0)
-        }}
-        onPointerCancel={() => {
-          start.current = null
-          onChange(0)
-        }}
+        onPointerUp={e => release(e.pointerId)}
+        onPointerCancel={e => release(e.pointerId)}
+        onLostPointerCapture={e => release(e.pointerId)}
       />
     </div>
   )

@@ -239,6 +239,7 @@ export class Mixer {
   private cueHeld: [boolean, boolean] = [false, false]
   private cueCombo = false
   private holdTimers: number[] = []
+  private fxReturn: Pick<MixerState, 'screen' | 'screenCh'> = { screen: 'main', screenCh: 0 }
   private stickZone = 0
   private padDown = false
 
@@ -566,20 +567,24 @@ export class Mixer {
     if (fxHeld[0] && fxHeld[1]) {
       if (this.s.selectHeld) {
         const serial = !this.s.serial
-        this.set({ serial })
+        this.set({ serial, screen: 'main' })
         this.route()
         return this.flash(serial ? 'SERIAL FX' : 'PARALLEL FX')
       }
       return this.set({ focus: 'both', screen: 'main' })
     }
     this.stickZone = 0
+    if (this.s.screen === 'fx' && this.s.screenCh === c) {
+      this.set(this.fxReturn)
+      return
+    }
+    if (this.s.screen !== 'fx') this.fxReturn = { screen: this.s.screen, screenCh: this.s.screenCh }
     this.set({ focus: c, screen: 'fx', screenCh: c })
   }
   fxUp(c: Ch) {
     const fxHeld = this.s.fxHeld.slice() as [boolean, boolean]
     fxHeld[c] = false
     this.set({ fxHeld })
-    if (this.s.screen === 'fx') this.set({ screen: 'main' })
   }
 
   /** the mod stick: -1..1, springs back to 0 */
@@ -587,7 +592,7 @@ export class Mixer {
     const stick = clamp(v, -1, 1)
     const prev = this.s.stick
     this.set({ stick })
-    // stepping through a list: settings, or the FX menu while one FX button is held
+    // stepping through a list: settings, or the selected channel’s FX menu
     const zone = stick > 0.5 ? 1 : stick < -0.5 ? -1 : 0
     const stepped = zone !== 0 && zone !== this.stickZone
     this.stickZone = zone
@@ -595,10 +600,9 @@ export class Mixer {
       if (stepped) this.set({ settingsIndex: (this.s.settingsIndex + zone + SETTINGS.length) % SETTINGS.length })
       return
     }
-    const one = this.s.fxHeld[0] !== this.s.fxHeld[1]
-    if (one) {
+    if (this.s.screen === 'fx') {
       if (!stepped) return
-      const c: Ch = this.s.fxHeld[0] ? 0 : 1
+      const c = this.s.screenCh
       const i = FX_TYPES.indexOf(this.s.ch[c].fx)
       this.setCh(c, { fx: FX_TYPES[(i + zone + FX_TYPES.length) % FX_TYPES.length] })
       this.applyCh(c)
@@ -803,10 +807,17 @@ export class Mixer {
       for (let i = 0; i < this.mbuf.length; i++) m = Math.max(m, Math.abs(this.mbuf[i]))
       return clamp((20 * Math.log10(m + 1e-6) + 36) / 36, 0, 1)
     }
-    const streamy = inputs.some((x) => x === 'stream')
-    const mm: [number, number] = streamy
-      ? [Math.max(ch[0].meter[0], ch[1].meter[0]) * this.s.master, Math.max(ch[0].meter[1], ch[1].meter[1]) * this.s.master]
-      : [peak(this.masterMeters[0]), peak(this.masterMeters[1])]
+    // Always meter the actual master bus (local files, AUX, FX and master gain).
+    // Only add a visual estimate for audio that lives inside an external player.
+    const mm: [number, number] = [peak(this.masterMeters[0]), peak(this.masterMeters[1])]
+    const streamMeters = ch.filter((_, i) => inputs[i] === 'stream').map(c => c.meter)
+    if (this.auxDeck && this.auxDeck.sourceKind !== 'local') streamMeters.push(this.auxDeck.getState().vu)
+    if (this.s.power) {
+      for (const levels of streamMeters) {
+        mm[0] = Math.max(mm[0], levels[0] * this.s.master)
+        mm[1] = Math.max(mm[1], levels[1] * this.s.master)
+      }
+    }
     patch.masterMeter = [Math.max(mm[0], this.s.masterMeter[0] * 0.85), Math.max(mm[1], this.s.masterMeter[1] * 0.85)]
     this.set(patch)
   }

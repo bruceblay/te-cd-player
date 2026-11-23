@@ -1,4 +1,6 @@
-import { memo } from 'react'
+import { memo, useId } from 'react'
+import cdMark from '../assets/compact-disc.svg'
+import teMark from '../assets/te-wordmark.png'
 import { U } from './controls'
 
 /*
@@ -21,29 +23,30 @@ const MECH =
   'M90 212 Q87 212 87 209 V143 Q87 141 88.5 139.5 L103.5 124.5 Q105 123 107 123 H159 Q162 123 162 120 V89 Q162 86 165 86 H232 Q234 86 235.5 87.5 L251 103 Q252.5 104.5 252.5 106.5 V145.6 A35 35 0 0 1 237 212 Z'
 
 export const PlateArt = memo(function PlateArt() {
+  const id = useId()
   return (
     <svg className="plate-art" viewBox={`0 0 ${PW} ${PH}`} width={PW * U} height={PH * U} aria-hidden>
       <defs>
-        <radialGradient id="boss" cx="40%" cy="35%" r="70%">
+        <radialGradient id={id + '-boss'} cx="40%" cy="35%" r="70%">
           <stop offset="0" stopColor="#e6e6e2" />
           <stop offset="0.7" stopColor="#c4c4bf" />
           <stop offset="1" stopColor="#a9a9a4" />
         </radialGradient>
-        <linearGradient id="mech" x1="0" y1="0" x2="0.4" y2="1">
+        <linearGradient id={id + '-mech'} x1="0" y1="0" x2="0.4" y2="1">
           <stop offset="0" stopColor="#47484b" />
           <stop offset="1" stopColor="#36373a" />
         </linearGradient>
-        <linearGradient id="sled" x1="0" y1="0" x2="1" y2="0">
+        <linearGradient id={id + '-sled'} x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor="#24296a" />
           <stop offset="0.55" stopColor="#323a8c" />
           <stop offset="1" stopColor="#1d2257" />
         </linearGradient>
-        <radialGradient id="lens" cx="45%" cy="40%" r="60%">
+        <radialGradient id={id + '-lens'} cx="45%" cy="40%" r="60%">
           <stop offset="0" stopColor="#c9ccd6" />
           <stop offset="0.35" stopColor="#6b7080" />
           <stop offset="1" stopColor="#2b2d33" />
         </radialGradient>
-        <linearGradient id="window" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={id + '-window'} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#060606" />
           <stop offset="1" stopColor="#151515" />
         </linearGradient>
@@ -52,7 +55,7 @@ export const PlateArt = memo(function PlateArt() {
       {SCREWS.map(([x, y], i) => (
         <g key={i} transform={`translate(${x} ${y})`}>
           <circle r="5.2" fill="#000" opacity="0.12" transform="translate(0.5 0.8)" />
-          <circle r="5" fill="url(#boss)" stroke="#9c9c97" strokeWidth="0.35" />
+          <circle r="5" fill={`url(#${id}-boss)`} stroke="#9c9c97" strokeWidth="0.35" />
           <circle r="2.6" fill="#6d6d69" />
           <path d="M-1.6 -0.9 L0 -1.85 L1.6 -0.9 V0.9 L0 1.85 L-1.6 0.9 Z" fill="#4a4a47" />
         </g>
@@ -61,38 +64,29 @@ export const PlateArt = memo(function PlateArt() {
 
       {/* laser mechanism */}
       <path d={MECH} fill="#000" opacity="0.25" transform="translate(0 0.8)" />
-      <path d={MECH} fill="url(#mech)" stroke="#a9a9a4" strokeWidth="0.7" />
+      <path d={MECH} fill={`url(#${id}-mech)`} stroke="#a9a9a4" strokeWidth="0.7" />
       <rect x={106} y={134} width={3.4} height={3.4} rx={0.5} fill="#151517" />
       <rect x={229} y={117} width={1.6} height={8} rx={0.6} fill="#1f2022" />
       <rect x={245} y={129} width={1.6} height={8} rx={0.6} fill="#1f2022" />
       <rect x={213} y={135} width={2.6} height={2.6} rx={0.4} fill="#1f2022" />
-      <text x={165} y={157.5} className="mech-print">teenage</text>
-      <text x={165} y={162} className="mech-print">engineering™</text>
+      <image href={teMark} x={165} y={150} width={35} height={13} />
       <rect x={89.5} y={171.5} width={68} height={18} rx={0.6} fill="#1b1c1f" />
-      <rect x={90.5} y={172.5} width={66} height={16} fill="url(#sled)" />
+      <rect x={90.5} y={172.5} width={66} height={16} fill={`url(#${id}-sled)`} />
       <rect x={157.5} y={169.5} width={46} height={22} rx={1} fill="#1d1e21" />
       <rect x={161} y={172} width={14} height={17} rx={1} fill="#5a5d66" />
       <rect x={186} y={172} width={14} height={17} rx={1} fill="#4a4d55" />
       <circle cx={180.5} cy={180.5} r={7} fill="#3a3c43" />
-      <circle cx={180.5} cy={180.5} r={4.6} fill="url(#lens)" />
+      <circle cx={180.5} cy={180.5} r={4.6} fill={`url(#${id}-lens)`} />
       <text x={96} y={199.5} className="mech-warn">CLASS 1 LASER: NEVER TOUCH THE LENS</text>
       <text x={96} y={203.5} className="mech-warn">NEVER LOOK DIRECTLY INTO THE LENS</text>
       <circle cx={167.5} cy={200.6} r={1.2} fill="#d8d8d8" />
       <line x1={169.5} y1={200.6} x2={178} y2={200.6} stroke="#8a8b8e" strokeWidth="0.35" />
 
       {/* index window */}
-      <rect x={219} y={236} width={34} height={17} rx={1} fill="url(#window)" stroke="#9b9b96" strokeWidth="0.4" />
+      <rect x={219} y={236} width={34} height={17} rx={1} fill={`url(#${id}-window)`} stroke="#9b9b96" strokeWidth="0.4" />
 
       {/* Compact Disc Digital Audio mark */}
-      <g transform="translate(307 170)" className="cd-mark">
-        <text x={31.5} y={4.2} textAnchor="end" className="cd-small">COMPACT</text>
-        <text x={-0.3} y={17.6} className="cd-disc" textLength={32} lengthAdjust="spacingAndGlyphs">
-          disc
-        </text>
-        <text x={16} y={22.4} textAnchor="middle" className="cd-small" textLength={31} lengthAdjust="spacingAndGlyphs">
-          DIGITAL AUDIO
-        </text>
-      </g>
+      <image href={cdMark} x={302} y={169} width={36} height={24} />
 
       {/* jacks along the edges */}
       <rect x={27} y={0} width={12} height={1.6} fill="#2b2c2e" />
@@ -104,7 +98,8 @@ export const PlateArt = memo(function PlateArt() {
 })
 
 /** the turntable under the disc; spins with it and shows through the clear hub */
-export function Turntable({ x, y, r, spin, secs }: { x: number; y: number; r: number; spin: boolean; secs: number }) {
+export function Turntable({ x, y, r, spin }: { x: number; y: number; r: number; spin: boolean }) {
+  const id = useId()
   const ticks = [-30, 90, 210]
   return (
     <svg
@@ -114,24 +109,24 @@ export function Turntable({ x, y, r, spin, secs }: { x: number; y: number; r: nu
       aria-hidden
     >
       <defs>
-        <path id="tt-ring" d="M0 -26 A26 26 0 1 1 -0.01 -26" />
-        <radialGradient id="tt" cx="45%" cy="40%" r="65%">
+        <path id={id + '-tt-ring'} d="M0 -26 A26 26 0 1 1 -0.01 -26" />
+        <radialGradient id={id + '-tt'} cx="45%" cy="40%" r="65%">
           <stop offset="0" stopColor="#2e2f32" />
           <stop offset="1" stopColor="#151517" />
         </radialGradient>
       </defs>
       <circle r="36" fill="#000" opacity="0.3" transform="translate(0.8 1.4)" />
       {/* only this group turns: the svg box itself never rotates */}
-      <g className={`tt-spin ${spin ? 'spin' : ''}`} style={{ animationDuration: `${secs}s` }}>
-      <circle r="35" fill="url(#tt)" stroke="#55565a" strokeWidth="0.6" />
+      <g className={`tt-spin ${spin ? 'spin' : ''}`}>
+      <circle r="35" fill={`url(#${id}-tt)`} stroke="#55565a" strokeWidth="0.6" />
       <circle r="31.5" fill="none" stroke="#2a2b2e" strokeWidth="0.8" />
       <text className="tt-print">
-        <textPath href="#tt-ring" startOffset="2%">
+        <textPath href={'#' + id + '-tt-ring'} startOffset="2%">
           DIGITAL VARISPEED
         </textPath>
       </text>
       <text className="tt-print">
-        <textPath href="#tt-ring" startOffset="52%">
+        <textPath href={'#' + id + '-tt-ring'} startOffset="52%">
           BC-1 · 44.1 KHZ
         </textPath>
       </text>

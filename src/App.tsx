@@ -9,8 +9,11 @@ import { Cable, type End } from './ui/Cable'
 import type { Jack } from './engine/mixer'
 
 
-// one deck for now; a second deck + mixer would add another instance
-const deck = new Deck()
+const decks = [new Deck(), new Deck()] as const
+const outputs = ['bc1-out', 'bc2-out']
+const inputs: Record<string, Jack> = { 'sk-ch1': 0, 'sk-ch2': 1, 'sk-aux': 'aux' }
+const defaultCables = outputs.map((a, i) => ({ a, b: `sk-ch${i + 1}` }))
+type Patch = Record<End, string | null>
 
 // the optional K.O.-sidekick mixer, created the first time it's added
 let mixer: Mixer | null = null
@@ -19,28 +22,34 @@ const noSub = () => () => {}
 const noState = () => null
 const readMixerPref = () => {
   try {
-    return localStorage.getItem('bc1.mixer') === '1'
+    return localStorage.getItem('bc1.mixer') !== '0'
   } catch {
-    return false
+    return true
   }
 }
-if (import.meta.env.DEV) Object.assign(window, { bc1: deck })
+if (import.meta.env.DEV) Object.assign(window, { bc1: decks[0], bc2: decks[1] })
 
 export default function App() {
-  const s = useSyncExternalStore(deck.subscribe, deck.getState)
+  const active = useRef(0)
   const [mixerOn, setMixerOn] = useState(readMixerPref)
   const ms = useSyncExternalStore<MixerState | null>(
     mixerOn ? getMixer().subscribe : noSub,
     mixerOn ? getMixer().getState : noState,
   )
-  // the patch cable from the BC-1's OUTPUT to a sidekick input
-  const [cable, setCable] = useState<Record<End, string | null>>({ a: 'bc1-out', b: 'sk-ch1' })
-  const jack: Jack = cable.a && cable.b ? ({ 'sk-ch1': 0, 'sk-ch2': 1, 'sk-aux': 'aux' } as const)[cable.b as 'sk-ch1'] ?? null : null
+  const [cables, setCables] = useState<Patch[]>(defaultCables)
   useEffect(() => {
-    if (mixerOn) getMixer().plug(deck, jack)
-  }, [mixerOn, jack])
+    if (mixerOn) {
+      decks.forEach((deck, i) => {
+        const { a, b } = cables[i]
+        getMixer().plug(deck, a && b ? inputs[b] : null)
+      })
+    } else {
+      active.current = 0
+      decks[1].powerSwitch(false)
+      mixer?.detach()
+    }
+  }, [mixerOn, cables])
   useEffect(() => {
-    if (!mixerOn) mixer?.detach()
     if (import.meta.env.DEV) Object.assign(window, { mix: mixerOn ? getMixer() : null })
     try {
       localStorage.setItem('bc1.mixer', mixerOn ? '1' : '0')
@@ -48,30 +57,43 @@ export default function App() {
       /* private mode: just not remembered */
     }
   }, [mixerOn])
-  const hiddenMount = useRef<HTMLDivElement>(null)
+  const hiddenMount = useRef<(HTMLDivElement | null)[]>([])
   const help = useRef<HTMLDialogElement>(null)
-  const burn = useRef<BurnDialogHandle>(null)
-  const openLid = () => burn.current?.open()
+  const burn = useRef<(BurnDialogHandle | null)[]>([])
+  const openLid = (i: number) => {
+    active.current = i
+    sessionStorage.setItem('bc1.spotify.deck', String(i))
+    burn.current[i]?.open()
+  }
   const [spotifyIn, setSpotifyIn] = useState(false)
 
   useEffect(() => {
-    deck.setMount(hiddenMount.current)
+    decks.forEach((deck, i) => deck.setMount(hiddenMount.current[i]))
     void spotifyToken().then((t) => setSpotifyIn(!!t))
     void completeSpotifyLogin().then((pending) => {
       if (pending) {
         setSpotifyIn(true)
-        void deck.loadDisc(pending)
+        void decks[sessionStorage.getItem('bc1.spotify.deck') === '1' ? 1 : 0].loadDisc(pending)
       }
     })
   }, [])
 
   // keyboard: mirrors the panel
   useEffect(() => {
+    const pressed = new Map<string, Deck>()
     const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     const down = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) {
+        if (e.key === '?' && help.current?.open && !e.repeat) {
+          help.current.close()
+          e.preventDefault()
+        }
+        return
+      }
       if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.target instanceof HTMLElement && e.target.closest('.key, .knob, .jog-cap') && (e.key === ' ' || e.key === 'Enter')) return
       const k = e.key
+      const deck = decks[active.current]
       let handled = true
       if (e.repeat) return e.preventDefault()
       if (k === ' ') deck.pressPlay()
@@ -88,15 +110,20 @@ export default function App() {
       else if (k === ',' || k === '<') deck.setJog(e.shiftKey ? -1 : -0.3)
       else if (k === '.' || k === '>') deck.setJog(e.shiftKey ? 1 : 0.3)
       else if (k === 'b') deck.btDown()
-      else if (k === 'o') openLid()
+      else if (k === 'o') openLid(active.current)
       else if (k === 'p') deck.powerSwitch(deck.getState().power === 'off')
       else if (k === 'm') setMixerOn((v) => !v)
-      else if (k === '?') (help.current?.open ? help.current.close() : help.current?.showModal())
+      else if (k === '?') help.current?.showModal()
       else handled = false
-      if (handled) e.preventDefault()
+      if (handled) {
+        pressed.set(e.code || k, deck)
+        e.preventDefault()
+      }
     }
     const up = (e: KeyboardEvent) => {
-      if (typing(e)) return
+      const deck = pressed.get(e.code || e.key)
+      if (!deck) return
+      pressed.delete(e.code || e.key)
       const k = e.key
       if (k === 'Enter') deck.enterUp()
       else if (k === 'q') deck.cueUp(0)
@@ -117,19 +144,21 @@ export default function App() {
     <main className="page">
       {/* the deck keeps its place in the tree either way, so a playing video isn't torn down */}
       <div className={mixerOn ? 'rig' : 'solo'}>
-        <Device deck={deck} s={s} onOpenLid={() => openLid()} />
+        {decks.map((deck, i) => (i === 0 || mixerOn) && (
+          <Device key={i} deck={deck} index={i} output={outputs[i]} onSelect={() => { active.current = i }} onOpenLid={() => openLid(i)} />
+        ))}
         {mixerOn && ms && <Sidekick mixer={getMixer()} s={ms} />}
-        {mixerOn && (
-          <Cable
-            a={cable.a}
-            b={cable.b}
-            accepts={{ a: ['bc1-out'], b: ['sk-ch1', 'sk-ch2', 'sk-aux'] }}
-            onChange={(end, j) => setCable((c) => ({ ...c, [end]: j }))}
+        {mixerOn && cables.map((cable, i) => (
+          <Cable key={i} {...cable}
+            accepts={{ a: [outputs[i]], b: Object.keys(inputs).filter(id => id !== cables[1 - i].b) }}
+            onChange={(end, jack) => setCables(current => {
+              if (end === 'b' && jack && current[1 - i].b === jack) return current
+              return current.map((patch, j) => j === i ? { ...patch, [end]: jack } : patch)
+            })}
           />
-        )}
+        ))}
       </div>
-      {/* the streaming players (YouTube, SoundCloud, Spotify) play from here, out of sight */}
-      <div className="offscreen" ref={hiddenMount} aria-hidden />
+      {decks.map((_, i) => <div key={i} className="offscreen" ref={el => { hiddenMount.current[i] = el }} aria-hidden />)}
 
       <dialog ref={help} className="lid help-dialog" onClick={(e) => e.target === help.current && help.current?.close()}>
         <header className="lid-head">
@@ -148,13 +177,13 @@ export default function App() {
           <div><dt>q w e</dt><dd>cue 1–3 (hold clears)</dd></div>
           <div><dt>b</dt><dd>bluetooth (hold pairs)</dd></div>
           <div><dt>o  p</dt><dd>burn disc, power</dd></div>
-          <div><dt>m</dt><dd>add / remove the K.O.-sidekick mixer</dd></div>
+          <div><dt>m</dt><dd>solo / two-deck rig</dd></div>
           <div className="wide"><dt>enter +</dt><dd>next: repeat · play: sync / tap · stop: tap / sync off · prev: rip · bt: broadcast</dd></div>
           <div className="wide"><dt>power off + play</dt><dd>battery check on the VU</dd></div>
         </dl>
       </dialog>
 
-      <BurnDialog ref={burn} deck={deck} mount={() => hiddenMount.current} spotifyIn={spotifyIn} onSpotifyOut={() => setSpotifyIn(false)} />
+      {decks.map((deck, i) => <BurnDialog key={i} ref={el => { burn.current[i] = el }} deck={deck} mount={() => hiddenMount.current[i]} spotifyIn={spotifyIn} onSpotifyOut={() => setSpotifyIn(false)} />)}
     </main>
   )
 }

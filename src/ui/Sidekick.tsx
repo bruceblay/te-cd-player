@@ -1,4 +1,5 @@
 import { Fragment, useLayoutEffect, useRef, useState } from 'react'
+import lidPrint from '../assets/sidekick-lid-print.svg'
 import { SETTINGS, type Mixer, type MixerState } from '../engine/mixer'
 import { FX_TYPES } from '../engine/sidekickFx'
 import { Jog, Key, Print, U, pos, u } from './controls'
@@ -62,11 +63,7 @@ export function Sidekick({ mixer, s }: { mixer: Mixer; s: MixerState }) {
 
         {/* ---------- lid ---------- */}
         <div className="sk-lid" style={pos(0, 19, PW, 110)}>
-          <span className="sk-logo" style={pos(18, 13)}>K.O.</span>
-          <span className="sk-dash" style={pos(65, 18.5, 8, 1.3)} />
-          <span className="sk-sub" style={pos(75, 14)}>SIDEKICK</span>
-          <span className="sk-jp" style={pos(18, 41)}>ミキサー</span>
-          <span className="sk-model" style={pos(18, 95)}>2 CH STEREO MIXER</span>
+          <img className="sk-lid-print" src={lidPrint} alt="K.O.–SIDEKICK ミキサー · 2 CH STEREO MIXER" draggable={false} />
           <span className="sk-screw" style={pos(4, 6, 9, 9)} />
           <span className="sk-screw" style={pos(189, 6, 9, 9)} />
           <span className="sk-screw" style={pos(4, 96, 9, 9)} />
@@ -112,7 +109,7 @@ export function Sidekick({ mixer, s }: { mixer: Mixer; s: MixerState }) {
         <Print x={RIGHT} y={303.5} w={37} className="center">VOLUME</Print>
         <SkKnob x={RIGHT} y={312} color="white" value={s.master} min={0} max={1} label="main volume" onChange={(v) => mixer.setMaster(v)} />
         <Print x={RIGHT} y={358.5} w={37} className="center">–&nbsp;&nbsp;MOD&nbsp;&nbsp;+</Print>
-        <Jog x={RIGHT} y={367} w={37} h={18} value={s.stick} onChange={(v) => mixer.setStick(v)} />
+        <Jog label="mod" x={RIGHT} y={367} w={37} h={18} value={s.stick} onChange={(v) => mixer.setStick(v)} />
         <Print x={RIGHT} y={431.5} w={37} className="center">PHONES</Print>
         <SkKnob x={RIGHT} y={440} color="grey" value={s.phones} min={0} max={1} label="phones volume" onChange={(v) => mixer.setPhones(v)} />
         <Key x={RIGHT} y={495} w={37} h={18} className="sk-key light" title="select" onDown={() => mixer.selectDown()} onUp={() => mixer.selectUp()}>

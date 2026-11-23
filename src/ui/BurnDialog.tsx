@@ -3,6 +3,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities'
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { DISC_COLORS, resolveFiles, resolveLink, type Compilation, type Item } from '../engine/compilation'
+import { listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
 import type { Deck } from '../engine/deck'
 import { parseSpotify } from '../sources/spotify'
 import { spotifyConfigured, spotifyLogout } from '../sources/spotifyAuth'
@@ -39,8 +40,54 @@ export const BurnDialog = forwardRef<
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
+  const [saved, setSaved] = useState<DiscListing[]>([])
+  const [saving, setSaving] = useState(false)
+  const [savedSnapshot, setSavedSnapshot] = useState<Compilation | null>(null)
+  const session = useRef(0)
+
+  const save = async () => {
+    const token = session.current
+    setSaving(true)
+    setProblem(null)
+    try {
+      const disc = await saveDisc(draft)
+      if (token !== session.current) return
+      setDraft(d => d === draft ? disc : { ...d, savedId: disc.savedId })
+      setSavedSnapshot(disc)
+      const rows = await listDiscs()
+      if (token === session.current) setSaved(rows)
+    } catch {
+      if (token === session.current) setProblem('couldn’t save this disc in this browser')
+    } finally {
+      if (token === session.current) setSaving(false)
+    }
+  }
+
+  const restore = async (id: string) => {
+    const token = session.current
+    setBusy(true)
+    setProblem(null)
+    try {
+      const disc = await openDisc(id)
+      if (token !== session.current) return
+      setDraft(disc)
+      setUrl('')
+      setSavedSnapshot(null)
+    } catch {
+      if (token === session.current) setProblem('couldn’t open this disc')
+    } finally {
+      if (token === session.current) setBusy(false)
+    }
+  }
+
   useImperativeHandle(ref, () => ({
     open() {
+      const token = ++session.current
+      setBusy(false)
+      setSaving(false)
+      setSavedSnapshot(null)
+      setSaved([])
+      void listDiscs().then(rows => { if (token === session.current) setSaved(rows) }).catch(() => {})
       const c = deck.compilation
       setDraft(c ? { ...c, items: c.items.slice() } : { title: '', color: DISC_COLORS[0], items: [] })
       setUrl('')
@@ -55,6 +102,7 @@ export const BurnDialog = forwardRef<
     setDraft((d) => ({ ...d, title: d.title || (d.items.length ? d.title : title), items: [...d.items, ...items] }))
 
   const addLink = async () => {
+    const token = session.current
     const link = url.trim()
     const m = mount()
     if (!link || !m || busy) return
@@ -62,13 +110,17 @@ export const BurnDialog = forwardRef<
     setProblem(null)
     try {
       const r = await resolveLink(link, m)
+      if (token !== session.current) return
       add(r.title, r.items)
       setUrl('')
     } catch (e) {
+      if (token !== session.current) return
       setProblem(e instanceof Error && e.message === 'login' ? 'signing in to Spotify…' : 'can’t add this link')
     } finally {
-      setBusy(false)
-      linkInput.current?.focus()
+      if (token === session.current) {
+        setBusy(false)
+        linkInput.current?.focus()
+      }
     }
   }
 
@@ -93,12 +145,20 @@ export const BurnDialog = forwardRef<
   }
 
   const detected = sourceOf(url.trim())
+  const linkError = problem ?? (url.trim() && !detected ? 'unsupported link' : '')
   const width = Math.max(2, String(draft.items.length).length)
 
   return (
-    <dialog ref={dlg} className="lid burn" onClick={(e) => e.target === dlg.current && dlg.current?.close()}>
+    <dialog ref={dlg} className="lid burn" onClose={() => { session.current++ }} onClick={(e) => e.target === dlg.current && dlg.current?.close()}>
       <header className="lid-head">
         <h2>burn disc</h2>
+        {saved.length > 0 && (
+          <select className="saved-discs" aria-label="open saved disc" value="" disabled={busy || saving}
+            onChange={e => void restore(e.target.value)}>
+            <option value="" disabled>saved discs</option>
+            {saved.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+          </select>
+        )}
         <button type="button" className="lid-close" onClick={() => dlg.current?.close()}>
           esc
         </button>
@@ -142,7 +202,6 @@ export const BurnDialog = forwardRef<
           </ol>
         </SortableContext>
       </DndContext>
-      {!draft.items.length && <p className="burn-empty">no tracks yet</p>}
 
       <form
         className="burn-add"
@@ -159,7 +218,7 @@ export const BurnDialog = forwardRef<
             setUrl(e.target.value)
             setProblem(null)
           }}
-          placeholder="paste a youtube, soundcloud or spotify link"
+          placeholder="YouTube, SoundCloud or Spotify link"
           aria-label="link"
           spellCheck={false}
           autoComplete="off"
@@ -168,26 +227,14 @@ export const BurnDialog = forwardRef<
           {busy ? 'adding…' : 'add'}
         </button>
       </form>
-      <p className="lid-sources" aria-live="polite">
-        {problem ? (
-          <span className="bad">{problem}</span>
-        ) : url.trim() && !detected ? (
-          <span className="bad">can’t play this link</span>
-        ) : (
-          (['YouTube', 'SoundCloud', 'Spotify'] as const).map((src) => (
-            <span key={src} className={detected === src ? 'on' : ''}>
-              {src.toLowerCase()}
-            </span>
-          ))
-        )}
-      </p>
-      {detected === 'Spotify' && (
+      <div role="status">
+        {linkError && <p className="lid-error">{linkError}</p>}
+      </div>
+      {detected === 'Spotify' && !spotifyIn && (
         <p className="lid-note">
           {spotifyConfigured()
-            ? spotifyIn
-              ? 'Signed in to Spotify. Full deck control (Premium).'
-              : 'You’ll be sent to Spotify to sign in (Premium needed for playback).'
-            : 'No Spotify client ID set: the link goes on as one track, played by the embed. See README.'}
+            ? 'Adding this link opens Spotify sign-in. Premium required.'
+            : 'Adds one track using the Spotify embed.'}
         </p>
       )}
 
@@ -224,7 +271,7 @@ export const BurnDialog = forwardRef<
             />
           </label>
           {draft.items.length > 0 && (
-            <button type="button" className="lid-text muted" onClick={() => setDraft((d) => ({ ...d, items: [] }))}>
+            <button type="button" className="lid-text muted" onClick={() => setDraft((d) => ({ ...d, savedId: undefined, items: [] }))}>
               clear
             </button>
           )}
@@ -239,9 +286,14 @@ export const BurnDialog = forwardRef<
             </button>
           )}
         </div>
-        <button type="button" className="lid-primary" disabled={!draft.items.length} onClick={burn}>
-          burn
-        </button>
+        <div className="disc-actions">
+          <button type="button" className="lid-text" disabled={saving || busy || !draft.items.length} onClick={() => void save()}>
+            {saving ? 'saving…' : savedSnapshot === draft ? 'saved' : 'save disc'}
+          </button>
+          <button type="button" className="lid-primary" disabled={saving || busy || !draft.items.length} onClick={burn}>
+            burn
+          </button>
+        </div>
       </footer>
     </dialog>
   )
