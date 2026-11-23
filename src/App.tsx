@@ -20,11 +20,41 @@ let mixer: Mixer | null = null
 const getMixer = () => (mixer ??= new Mixer())
 const noSub = () => () => {}
 const noState = () => null
+const CABLES_KEY = 'bc1.cables'
 const readMixerPref = () => {
   try {
     return localStorage.getItem('bc1.mixer') !== '0'
   } catch {
     return true
+  }
+}
+const readCables = (): Patch[] => {
+  try {
+    const raw = localStorage.getItem(CABLES_KEY)
+    if (!raw) return defaultCables
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed) || parsed.length !== outputs.length) return defaultCables
+    const usedB = new Set<string>()
+    return outputs.map((out, i) => {
+      const item = parsed[i]
+      if (!item || typeof item !== 'object') return defaultCables[i]
+      const { a, b } = item as Record<string, unknown>
+      const validA = a === null ? null : a === out ? out : defaultCables[i].a
+      let validB: string | null = null
+      if (b === null) {
+        validB = null
+      } else if (typeof b === 'string' && b in inputs && !usedB.has(b)) {
+        validB = b
+        usedB.add(b)
+      } else {
+        const fallback = defaultCables[i].b
+        validB = fallback && !usedB.has(fallback) ? fallback : null
+        if (validB) usedB.add(validB)
+      }
+      return { a: validA, b: validB }
+    })
+  } catch {
+    return defaultCables
   }
 }
 if (import.meta.env.DEV) Object.assign(window, { bc1: decks[0], bc2: decks[1] })
@@ -36,7 +66,14 @@ export default function App() {
     mixerOn ? getMixer().subscribe : noSub,
     mixerOn ? getMixer().getState : noState,
   )
-  const [cables, setCables] = useState<Patch[]>(defaultCables)
+  const [cables, setCables] = useState<Patch[]>(readCables)
+  useEffect(() => {
+    try {
+      localStorage.setItem(CABLES_KEY, JSON.stringify(cables))
+    } catch {
+      /* private mode: just not remembered */
+    }
+  }, [cables])
   useEffect(() => {
     if (mixerOn) {
       decks.forEach((deck, i) => {
@@ -148,15 +185,21 @@ export default function App() {
           <Device key={i} deck={deck} index={i} output={outputs[i]} onSelect={() => { active.current = i }} onOpenLid={() => openLid(i)} />
         ))}
         {mixerOn && ms && <Sidekick mixer={getMixer()} s={ms} />}
-        {mixerOn && cables.map((cable, i) => (
-          <Cable key={i} {...cable}
-            accepts={{ a: [outputs[i]], b: Object.keys(inputs).filter(id => id !== cables[1 - i].b) }}
-            onChange={(end, jack) => setCables(current => {
-              if (end === 'b' && jack && current[1 - i].b === jack) return current
-              return current.map((patch, j) => j === i ? { ...patch, [end]: jack } : patch)
-            })}
-          />
-        ))}
+        {mixerOn && cables.map((cable, i) => {
+          const preferred = defaultCables[i].b
+          const freeB = Object.keys(inputs)
+            .filter((id) => id !== cables[1 - i].b)
+            .sort((x, y) => (x === preferred ? -1 : y === preferred ? 1 : 0))
+          return (
+            <Cable key={i} {...cable}
+              accepts={{ a: [outputs[i]], b: freeB }}
+              onChange={(end, jack) => setCables(current => {
+                if (end === 'b' && jack && current[1 - i].b === jack) return current
+                return current.map((patch, j) => j === i ? { ...patch, [end]: jack } : patch)
+              })}
+            />
+          )
+        })}
       </div>
       {decks.map((_, i) => <div key={i} className="offscreen" ref={el => { hiddenMount.current[i] = el }} aria-hidden />)}
 

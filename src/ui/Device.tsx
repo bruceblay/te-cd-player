@@ -252,7 +252,9 @@ export function Device({
 }
 
 const LIGHT = new Set(['#c9cbd0', '#ece6d6'])
-const PER_LINE = 30
+const TITLE_MAX = 23
+const TRACK_MAX = 22
+const TRACK_MAX_NO_TIME = 26
 
 /**
  * A burned disc: one solid colour, printed with its title and track list in
@@ -260,34 +262,43 @@ const PER_LINE = 30
  */
 function DiscPrint({ disc }: { disc: NonNullable<DeckState['disc']> }) {
   const color = disc.color ?? '#22468c'
-  const ink = LIGHT.has(color) ? '#2a2a2a' : '#f4f4f2'
+  const ink = LIGHT.has(color) ? '#1c1c1e' : '#f8f8f6'
   const tracks = disc.tracks
   // lines above the hub, then below it; the last slot says how many didn't fit
-  const slots = [19, 21.6, 24.2, 26.8, 29.4, 32, 67.6, 70.2, 72.8, 75.4, 78, 80.6, 83.2]
+  const slots = [22.2, 25.8, 29.4, 33, 69.4, 73, 76.6, 80.2, 83.8]
   const fits = tracks.length <= slots.length ? tracks.length : slots.length - 1
   const w = Math.max(2, String(tracks.length).length)
-  const clip = (t: string) => (t.length > PER_LINE ? `${t.slice(0, PER_LINE - 1)}…` : t)
+  const titleX = w > 2 ? 26 : 24
+  const clip = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1)}…` : t)
   const time = (d: number) => (d > 0 ? `${Math.floor(d / 60)}:${String(Math.floor(d % 60)).padStart(2, '0')}` : '')
   return (
     <svg className="disc-print" viewBox="0 0 100 100" aria-hidden>
       {/* the printed area, with the clear hub left out */}
       <path d="M50 0 A50 50 0 1 1 49.99 0 Z M50 35.2 A14.8 14.8 0 1 0 50.01 35.2 Z" fill={color} fillRule="evenodd" />
       <g fill={ink} className="disc-type">
-        <text x="25" y="15.4" className="disc-title">
-          {clip(disc.title.toUpperCase())}
+        <text x="19" y="17.8" className="disc-title">
+          {clip(disc.title.toUpperCase(), TITLE_MAX)}
         </text>
-        {tracks.slice(0, fits).map((t, i) => (
-          <g key={i}>
-            <text x="25" y={slots[i]}>
-              {String(i + 1).padStart(w, '0')}&nbsp;&nbsp;{clip(t.title.toUpperCase())}
-            </text>
-            <text x="75" y={slots[i]} textAnchor="end">
-              {time(t.duration)}
-            </text>
-          </g>
-        ))}
+        {tracks.slice(0, fits).map((t, i) => {
+          const dur = time(t.duration)
+          return (
+            <g key={i}>
+              <text x="19" y={slots[i]}>
+                {String(i + 1).padStart(w, '0')}
+              </text>
+              <text x={titleX} y={slots[i]}>
+                {clip(t.title.toUpperCase(), dur ? TRACK_MAX : TRACK_MAX_NO_TIME)}
+              </text>
+              {dur && (
+                <text x="81" y={slots[i]} textAnchor="end">
+                  {dur}
+                </text>
+              )}
+            </g>
+          )
+        })}
         {tracks.length > fits && (
-          <text x="25" y={slots[slots.length - 1]}>
+          <text x="19" y={slots[slots.length - 1]}>
             + {tracks.length - fits} MORE
           </text>
         )}

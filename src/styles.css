@@ -458,14 +458,15 @@ button {
 /* small capitals, like the printing on TE's utility disc */
 .disc-type text {
   font-family: 'Manrope', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  font-size: 1.85px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
+  font-size: 2.75px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
 }
 .disc-type .disc-title {
-  font-size: 2.3px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-size: 3.4px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }
 .disc-shine {
   position: absolute;
