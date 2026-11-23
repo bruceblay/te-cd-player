@@ -65,7 +65,8 @@ export class YouTubeSource implements Source {
   private host: HTMLDivElement
 
   constructor(
-    private ref: { video?: string; list?: string },
+    /** a video, a playlist, or (for compilations) an explicit list of video ids */
+    private ref: { video?: string; list?: string; ids?: string[] },
     mount: HTMLElement,
     private cb: SourceCallbacks,
   ) {
@@ -75,14 +76,14 @@ export class YouTubeSource implements Source {
 
   async load(): Promise<DiscInfo> {
     const YT = await youtubeApi()
-    const { video, list } = this.ref
+    const { video, list, ids } = this.ref
     await new Promise<void>((resolve, reject) => {
       setTimeout(() => reject(new Error('yt timeout')), 15000)
       this.player = new YT.Player(this.host, {
         width: '100%',
         height: '100%',
         // the API rejects an explicit undefined videoId
-        ...(list ? {} : { videoId: video }),
+        ...(list ? {} : { videoId: ids ? ids[0] : video }),
         // the video is the disc face: no chrome, no keyboard, no annotations
         playerVars: {
           playsinline: 1,
@@ -119,7 +120,7 @@ export class YouTubeSource implements Source {
       this.player.cueVideoById({ videoId: this.ids[start] })
       this.current = start
     } else {
-      this.ids = [video!]
+      this.ids = ids ?? [video!]
       this.current = 0
     }
     const data = this.player.getVideoData?.() ?? {}
@@ -134,7 +135,14 @@ export class YouTubeSource implements Source {
         artwork: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
       })),
     }
-    void this.fetchTitles()
+    if (!ids) void this.fetchTitles()
+    if (list) {
+      // the playlist's own name
+      void fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/playlist?list=${list}`)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => j?.title && this.cb.onDiscMeta({ title: j.title }))
+        .catch(() => {})
+    }
     return disc
   }
 
@@ -155,6 +163,10 @@ export class YouTubeSource implements Source {
       }
     }
     await Promise.all([worker(), worker(), worker(), worker()])
+  }
+
+  get videoIds() {
+    return this.ids
   }
 
   private onState(s: number) {

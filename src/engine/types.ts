@@ -8,14 +8,19 @@ export interface TrackInfo {
   folder?: number
   /** cover for this track, when it differs from the disc's */
   artwork?: string
+  /** where the track comes from (on a burned disc they can differ) */
+  source?: SourceKind
 }
 
 export interface DiscInfo {
   /** stable id used to remember cue markers across sessions */
   id: string
-  kind: SourceKind
+  /** 'mix' for a burned disc */
+  kind: SourceKind | 'mix'
   title: string
   artwork?: string
+  /** printed colour of a burned disc */
+  color?: string
   tracks: TrackInfo[]
 }
 

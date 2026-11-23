@@ -56,11 +56,11 @@ async function api(path: string, init: RequestInit = {}) {
   return res.status === 204 ? null : res.json().catch(() => null)
 }
 
-interface SpTrack extends TrackInfo {
+export interface SpTrack extends TrackInfo {
   uri: string
 }
 
-async function resolveTracks(ref: SpotifyRef): Promise<{ title: string; artwork?: string; tracks: SpTrack[] }> {
+export async function resolveTracks(ref: SpotifyRef): Promise<{ title: string; artwork?: string; tracks: SpTrack[] }> {
   const toTrack = (t: any): SpTrack | null =>
     t?.uri && (t.type === undefined || t.type === 'track')
       ? { uri: t.uri, title: t.name, duration: (t.duration_ms ?? 0) / 1000 }
@@ -133,10 +133,12 @@ export class SpotifySdkSource implements Source {
   constructor(
     private ref: SpotifyRef,
     private cb: SourceCallbacks,
+    /** compilations pass their tracks in, already resolved */
+    private given?: SpTrack[],
   ) {}
 
   async load(): Promise<DiscInfo> {
-    const info = await resolveTracks(this.ref)
+    const info = this.given ? { title: 'Spotify', artwork: undefined, tracks: this.given } : await resolveTracks(this.ref)
     this.tracks = info.tracks
     if (!this.tracks.length) throw new Error('empty')
     await spotifySdk()

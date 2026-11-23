@@ -93,6 +93,10 @@ export class SoundCloudSource implements Source {
         this.dur = d / 1000
         this.cb.onTrackMeta(this.current, { duration: this.dur })
       })
+      // sets only arrive with full details for the first few tracks; fill each in as it plays
+      w.getCurrentSound((snd: any) => {
+        if (snd?.title) this.cb.onTrackMeta(this.current, { title: snd.title, artwork: artOf(snd) })
+      })
       this.cb.onPlayState(true)
     })
     w.bind(E.PAUSE, () => {
@@ -104,12 +108,33 @@ export class SoundCloudSource implements Source {
       this.cb.onEnded()
     })
 
+    const artOf = (snd: any) => {
+      const a = (snd?.artwork_url || '') as string
+      return a ? a.replace('-large', '-t500x500') : undefined
+    }
     const sounds: any[] = await new Promise((r) => w.getSounds((s: any[]) => r(s ?? [])))
     const single: any = await new Promise((r) => w.getCurrentSound((s: any) => r(s)))
     const list = sounds.length ? sounds : single ? [single] : []
     this.count = Math.max(1, list.length)
     const first = list[0] ?? {}
     const art = (first.artwork_url || first.user?.avatar_url || '') as string
+    // the widget fetches the rest of a set's details in the background; pick them up
+    for (const ms of [3000, 9000]) {
+      setTimeout(() => {
+        w.getSounds((later: any[]) =>
+          (later ?? []).forEach((snd, i) => {
+            if (snd?.title) this.cb.onTrackMeta(i, { title: snd.title, duration: snd.duration ? snd.duration / 1000 : undefined, artwork: artOf(snd) })
+          }),
+        )
+      }, ms)
+    }
+    // the set's own name, rather than its first track's
+    if (list.length > 1) {
+      void fetch(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(this.url)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => j?.title && this.cb.onDiscMeta({ title: j.title }))
+        .catch(() => {})
+    }
     return {
       id: `sc:${this.url.replace(/[?#].*$/, '')}`,
       kind: 'soundcloud',

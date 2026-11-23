@@ -98,6 +98,7 @@ export function Knob({
   max,
   onChange,
   onReset,
+  onTap,
   label,
 }: {
   x: number
@@ -111,9 +112,11 @@ export function Knob({
   max: number
   onChange: (v: number) => void
   onReset?: () => void
+  /** a click without turning (the sidekick's gain knobs push) */
+  onTap?: () => void
   label: string
 }) {
-  const drag = useRef<{ y: number; v: number } | null>(null)
+  const drag = useRef<{ y: number; v: number; moved: boolean } | null>(null)
   const frac = (value - min) / (max - min)
   const angle = -140 + frac * 280
   const inset = u((size - cap) / 2)
@@ -128,7 +131,7 @@ export function Knob({
       style={pos(x, y, size, size)}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId)
-        drag.current = { y: e.clientY, v: value }
+        drag.current = { y: e.clientY, v: value, moved: false }
       }}
       onPointerMove={(e) => {
         if (!drag.current) return
@@ -137,10 +140,16 @@ export function Knob({
           drag.current = null
           return
         }
+        // knobs that can be clicked get a small dead zone so a click doesn't nudge them
+        if (!onTap || Math.abs(drag.current.y - e.clientY) > 3) drag.current.moved = true
+        if (!drag.current.moved) return
         const k = e.shiftKey ? 0.1 : 0.5
         onChange(Math.min(max, Math.max(min, drag.current.v + (drag.current.y - e.clientY) * k * ((max - min) / 100))))
       }}
-      onPointerUp={() => (drag.current = null)}
+      onPointerUp={() => {
+        if (drag.current && !drag.current.moved) onTap?.()
+        drag.current = null
+      }}
       onPointerCancel={() => (drag.current = null)}
       onLostPointerCapture={() => (drag.current = null)}
       onDoubleClick={onReset}

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type RefObject } from 'react'
+import { Fragment, useLayoutEffect, useRef, useState } from 'react'
 import type { Deck, DeckState } from '../engine/deck'
 import { readout } from '../engine/display'
 import { Jog, Key, Knob, Led, Print, U, VU, pos, u } from './controls'
@@ -35,20 +35,20 @@ const GROUPS = [118.5, 152, 185.5, 219] // TRACK INDEX MIN SEC
 export function Device({
   deck,
   s,
-  videoMount,
   onOpenLid,
 }: {
   deck: Deck
   s: DeckState
-  /** YouTube's player is created in here, so the video becomes the disc face */
-  videoMount: RefObject<HTMLDivElement | null>
   onOpenLid: () => void
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const [k, setK] = useState(1)
-  useEffect(() => {
+  // measured before first paint, so the faceplate never shows at full size for a frame
+  useLayoutEffect(() => {
     const el = wrap.current!
-    const ro = new ResizeObserver(() => setK(el.clientWidth / u(PW)))
+    const fit = () => setK(el.clientWidth / u(PW))
+    fit()
+    const ro = new ResizeObserver(fit)
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -58,9 +58,6 @@ export function Device({
   const vu: [number, number] = s.batteryCheck ? [s.battery, s.battery] : on ? s.vu : [0, 0]
   const spinning = on && s.transport === 'playing'
   const spinSecs = 1.6 / (s.vari / 100)
-  const art = s.disc?.tracks[s.track]?.artwork ?? s.disc?.artwork
-  // the cued YouTube player shows its own title card; cover it with the thumbnail until playback starts
-  const video = s.disc?.kind === 'youtube' && s.transport !== 'stopped'
   const bt = BT_LED[on ? s.bt : 'off']
 
   return (
@@ -77,6 +74,8 @@ export function Device({
 
         {/* ---------- top edge: ports, BT, power ---------- */}
         <Print x={22} y={4}>OUTPUT</Print>
+        {/* where a patch cable plugs in (the jack is on the top edge) */}
+        <span className="jack-anchor" data-jack="bc1-out" style={pos(27, 0, 12, 1)} />
         <Led x={63.5} y={5.6} {...bt} />
         <Print x={68.5} y={4}>BT</Print>
         <button
@@ -111,12 +110,11 @@ export function Device({
         {/* the disc box stays put and clips; only its printed face turns, so the
             rotating square's corners never poke out and jiggle the page's scrollbars */}
         <div
-          className={`disc ${s.disc ? '' : 'empty'} ${art || s.disc?.kind === 'youtube' ? 'printed' : ''}`}
+          className={`disc ${s.disc ? 'printed' : 'empty'}`}
           style={pos(CX - DISC_R, CY - DISC_R, DISC_R * 2, DISC_R * 2)}
         >
           <div className={`disc-face ${spinning ? 'spin' : ''}`} style={{ animationDuration: `${spinSecs}s` }}>
-            <div className="disc-video" ref={videoMount} />
-            {art && <img src={art} alt="" draggable={false} className={video ? 'under' : ''} />}
+            {s.disc && <DiscPrint disc={s.disc} />}
           </div>
           <span className="disc-shine" />
           <span className="disc-hub" />
@@ -241,5 +239,50 @@ export function Device({
         <Print x={267} y={496} w={28} className="center">PHONES</Print>
       </div>
     </div>
+  )
+}
+
+const LIGHT = new Set(['#c9cbd0', '#ece6d6'])
+const PER_LINE = 30
+
+/**
+ * A burned disc: one solid colour, printed with its title and track list in
+ * small capitals, like TE's own utility disc. The clear hub stays clear.
+ */
+function DiscPrint({ disc }: { disc: NonNullable<DeckState['disc']> }) {
+  const color = disc.color ?? '#22468c'
+  const ink = LIGHT.has(color) ? '#2a2a2a' : '#f4f4f2'
+  const tracks = disc.tracks
+  // lines above the hub, then below it; the last slot says how many didn't fit
+  const slots = [19, 21.6, 24.2, 26.8, 29.4, 32, 67.6, 70.2, 72.8, 75.4, 78, 80.6, 83.2]
+  const fits = tracks.length <= slots.length ? tracks.length : slots.length - 1
+  const w = Math.max(2, String(tracks.length).length)
+  const clip = (t: string) => (t.length > PER_LINE ? `${t.slice(0, PER_LINE - 1)}…` : t)
+  const time = (d: number) => (d > 0 ? `${Math.floor(d / 60)}:${String(Math.floor(d % 60)).padStart(2, '0')}` : '')
+  return (
+    <svg className="disc-print" viewBox="0 0 100 100" aria-hidden>
+      {/* the printed area, with the clear hub left out */}
+      <path d="M50 0 A50 50 0 1 1 49.99 0 Z M50 35.2 A14.8 14.8 0 1 0 50.01 35.2 Z" fill={color} fillRule="evenodd" />
+      <g fill={ink} className="disc-type">
+        <text x="25" y="15.4" className="disc-title">
+          {clip(disc.title.toUpperCase())}
+        </text>
+        {tracks.slice(0, fits).map((t, i) => (
+          <g key={i}>
+            <text x="25" y={slots[i]}>
+              {String(i + 1).padStart(w, '0')}&nbsp;&nbsp;{clip(t.title.toUpperCase())}
+            </text>
+            <text x="75" y={slots[i]} textAnchor="end">
+              {time(t.duration)}
+            </text>
+          </g>
+        ))}
+        {tracks.length > fits && (
+          <text x="25" y={slots[slots.length - 1]}>
+            + {tracks.length - fits} MORE
+          </text>
+        )}
+      </g>
+    </svg>
   )
 }

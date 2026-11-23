@@ -11,7 +11,7 @@ npm run dev   # open http://localhost:5178 (YouTube blocks some videos on 127.0.
 
 ## Discs
 
-Click the disc (or press `o`) to paste a link or pick files. A YouTube video plays on the spinning disc itself; other sources print their cover art from the clear hub to the rim. With no disc you see the laser mechanism and turntable. Press `?` for the keyboard map.
+Click the disc (or press `o`) to **burn a disc**: name it, pick its colour, add tracks from YouTube, SoundCloud and Spotify links and local files (one disc can mix them), drag them into order, and burn. The disc is printed with its title and track list, numbered as the TRACK display counts them, so the numpad can jump to any track. Clicking the disc again opens it for editing. Press `?` for the keyboard map.
 
 | Source | Loads | Varispeed | Level | VU | Rip | Auto BPM |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -61,8 +61,32 @@ The deck auto-sleeps after 5 minutes without playback; PLAY or the switch wakes 
 Keyboard: space play, `x` stop, ←/→ skip, `,` `.` jog (shift for 8×), digits, `t`,
 enter, esc, `q` `w` `e` cues, `b` bluetooth, `o` load disc, `p` power. The knobs only turn by dragging.
 
+## K.O.-sidekick mixer (optional)
+
+Press `m` to put an EP-136 K.O.-sidekick beside the deck (remembered between visits). The BC-1 plays into channel 1; channel 2 has no source yet.
+
+A patch cable runs from the BC-1's OUTPUT to the sidekick's CH 1 input. Drag either plug out to unplug it (the deck goes silent), and drop the mixer end on CH 1, CH 2 or AUX (AUX skips the channel strip).
+
+The EQ, compressor, pan, gain boost, cue and effects process **local files only**: streaming audio stays inside its own player, out of reach. A streaming deck still follows its fader, gain cut, main volume and power, through the player's volume, and the siren (which makes its own sound) works over anything.
+
+| Control | Action |
+| --- | --- |
+| GAIN | trim, ±24 dB. Click: compressor (turn = amount, SELECT + turn = glue / punch / limit). SELECT + click: gain and pan (SELECT + turn = pan) |
+| HIGH / MID / LOW | EQ. Style is set in system settings: DJ (isolator: full left kills the band), studio (±12 dB), param (±15 dB, narrower mid). Double-click resets |
+| CUE | sends the channel, before its FX and fader, to the cue output. Both CUEs: main mix to cue. Cue output device is chosen in system settings |
+| fader | channel level. SELECT + fader shows the value |
+| FX | focus that channel's effect. Hold FX + move MOD: pick filter, delay, tape, loop, tremolo or siren. Hold both FX: drive both effects. SELECT + both FX: serial mode (main mix through FX 1 then FX 2) |
+| MOD stick, force pad | play the effect (see below). With a mouse, a pad press starts at medium pressure and dragging up presses harder; pens and touchscreens send real pressure |
+| SELECT | while playing an effect: lock it. Hold SELECT and play MOD / pad: record a looping FX sequence (rounded to whole beats); moving MOD or pad again stops it |
+| SELECT + CUE | tempo screen: tap CUE for tap tempo, hold CUE for auto BPM (local files) |
+| system button (lid, lower right) | settings: MOD steps through EQ style, tempo source, cue output; pad or SELECT changes the value |
+| VOLUME, PHONES | main and cue levels |
+
+Effects: **filter** (MOD: low-pass left, high-pass right; pad: resonance and noise), **delay** (MOD: 1/32 to 2/1; pad: amount), **tape** (MOD: rewind / fast-forward the last few seconds; pad: wow and flutter), **loop** (pad: repeat the last N beats; MOD: N), **tremolo** (MOD: rate; pad: depth), **siren** (MOD: tone; pad: play). All of them sync to the channel's tempo.
+
 ## Code
 
 - `src/engine/deck.ts`: one BC-1 (state machine, every panel behaviour). Self-contained so a second deck and a mixer can sit beside it.
 - `src/sources/*`: one adapter per source behind the `Source` interface in `src/engine/types.ts`.
+- `src/engine/mixer.ts`, `sidekickFx.ts`, `sidekickWorklet.ts`: the sidekick's audio graph, its six effects, and the sample-level tape and loop processors.
 - `src/ui/*`: faceplate, seven-segment displays, knobs, jog. Positions use the units of teenage engineering's top-view diagram in the BC-1 guide (plate = 370 x 511).

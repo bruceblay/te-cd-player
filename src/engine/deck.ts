@@ -1,11 +1,7 @@
-import { LocalSource } from '../sources/local'
-import { isSoundCloud, SoundCloudSource } from '../sources/soundcloud'
-import { parseSpotify, SpotifyEmbedSource, SpotifySdkSource } from '../sources/spotify'
-import { beginSpotifyLogin, spotifyConfigured, spotifyToken } from '../sources/spotifyAuth'
-import { parseYouTube, YouTubeSource } from '../sources/youtube'
+import { CompilationSource, DISC_COLORS, resolveFiles, resolveLink, type Compilation } from './compilation'
 import { Midi, type MidiCommand } from './midi'
 import type { Capabilities, DiscInfo, Source, SourceCallbacks } from './types'
-import { clamp } from './util'
+import { audioContext, clamp } from './util'
 
 export type Transport = 'stopped' | 'playing' | 'paused'
 export type Repeat = 'off' | 'one' | 'all'
@@ -105,9 +101,10 @@ export class Deck {
   private s: DeckState = { ...initial }
   private listeners = new Set<() => void>()
   private source: Source | null = null
-  /** YouTube renders into the disc face; audio-only embeds live off-screen */
-  private videoMount: HTMLElement | null = null
+  /** the streaming players live off-screen; the disc face is printed */
   private hiddenMount: HTMLElement | null = null
+  /** what's burned on the current disc, for editing it */
+  private comp: Compilation | null = null
   private rateTimer: number | undefined
   private gen = 0
   private timer: number | undefined
@@ -127,8 +124,19 @@ export class Deck {
   private lastJogSeek = 0
   private vuSim: [number, number] = [0, 0]
   private midi = new Midi((c) => this.midiCommand(c))
+  /**
+   * Local audio leaves the deck here. It feeds the speakers until a mixer
+   * takes it over (see Mixer.attach). Streams never reach it: their audio
+   * stays inside their own players.
+   */
+  readonly bus: GainNode
+  /** mixer fader/gain for streams, which can only be turned down via their player volume */
+  private mixGain = 1
 
   constructor() {
+    const ctx = audioContext()
+    this.bus = ctx.createGain()
+    this.bus.connect(ctx.destination)
     this.timer = window.setInterval(() => this.tick(), 50)
     const nav = navigator as Navigator & { getBattery?: () => Promise<{ level: number; charging: boolean; addEventListener: (t: string, f: () => void) => void }> }
     void nav.getBattery?.().then((b) => {
@@ -150,9 +158,11 @@ export class Deck {
     this.s = { ...this.s, ...patch }
     this.listeners.forEach((l) => l())
   }
-  setMounts(video: HTMLElement | null, hidden: HTMLElement | null) {
-    this.videoMount = video
+  setMount(hidden: HTMLElement | null) {
     this.hiddenMount = hidden
+  }
+  get compilation() {
+    return this.comp
   }
   dispose() {
     clearInterval(this.timer)
@@ -200,7 +210,8 @@ export class Deck {
 
   /* ---------------- loading ---------------- */
 
-  async loadDisc(input: string | File[]) {
+  /** load a burned disc, or a single link / some files as a disc of their own */
+  async loadDisc(input: string | File[] | Compilation) {
     if (!this.on) this.powerSwitch(true)
     const my = ++this.gen
     const cb: SourceCallbacks = {
@@ -215,6 +226,12 @@ export class Deck {
           ...Object.fromEntries(Object.entries(meta).filter(([, v]) => v !== undefined && v !== '')),
         }
         this.set({ disc: { ...this.s.disc, tracks } })
+        // keep the burn list in step, so editing the disc shows what was learned while playing
+        const it = this.comp?.items[i]
+        if (it) {
+          if (meta.title) it.title = meta.title
+          if (meta.duration) it.duration = meta.duration
+        }
       },
       onDiscMeta: (meta) => my === this.gen && this.s.disc && this.set({ disc: { ...this.s.disc, ...meta } }),
       onError: (m) => {
@@ -229,33 +246,25 @@ export class Deck {
       },
     }
 
-    let src: Source
-    if (Array.isArray(input)) {
-      src = new LocalSource(input, cb)
-    } else {
-      const url = input.trim()
-      const yt = parseYouTube(url)
-      const sp = parseSpotify(url)
-      if (!this.videoMount || !this.hiddenMount) throw new Error('no mount')
-      if (yt) src = new YouTubeSource(yt, this.videoMount, cb)
-      else if (isSoundCloud(url)) src = new SoundCloudSource(url, this.hiddenMount, cb)
-      else if (sp) {
-        if (spotifyConfigured()) {
-          if (!(await spotifyToken())) {
-            this.flash('login', 4000)
-            await beginSpotifyLogin(url)
-            return
-          }
-          src = new SpotifySdkSource(sp, cb)
-        } else src = new SpotifyEmbedSource(sp, this.hiddenMount, cb)
-      } else {
-        this.flash('bad disc', 2000)
-        return
+    if (!this.hiddenMount) throw new Error('no mount')
+    let comp: Compilation
+    if (Array.isArray(input)) comp = { ...resolveFiles(input), color: DISC_COLORS[0] }
+    else if (typeof input === 'string') {
+      this.set({ loading: true, message: 'load' })
+      this.msgUntil = Infinity
+      try {
+        comp = { ...(await resolveLink(input.trim(), this.hiddenMount)), color: DISC_COLORS[0] }
+      } catch (e) {
+        this.set({ loading: false })
+        return this.flash(e instanceof Error && e.message === 'login' ? 'login' : 'bad disc', 2500)
       }
-    }
+      if (my !== this.gen) return
+    } else comp = input
+    const src: Source = new CompilationSource(comp, this.hiddenMount, cb, this.bus)
 
     this.eject(false)
     this.source = src
+    this.comp = comp
     this.set({ loading: true, error: null, message: 'load' })
     this.msgUntil = Infinity
     try {
@@ -273,7 +282,7 @@ export class Deck {
         cues: stored?.cues ?? [null, null, null],
         entry: null,
       })
-      src.setVolume(this.s.level / 100)
+      this.applyVolume()
       this.applyRate(true)
       this.flash(`${String(disc.tracks.length).padStart(3, '0')} trk`, 1500)
       if (this.s.sync.on) void this.detectTempo()
@@ -293,6 +302,7 @@ export class Deck {
     if (this.s.recording) void this.finishRecording()
     this.source?.destroy()
     this.source = null
+    this.comp = null
     this.stopClock()
     this.set({
       disc: null,
@@ -320,7 +330,13 @@ export class Deck {
       duration: this.s.disc.tracks[track]?.duration ?? 0,
       transport: play ? 'playing' : this.s.transport === 'playing' ? 'paused' : this.s.transport,
     })
-    void this.source.cue(track, at, play)
+    const src = this.source
+    void src.cue(track, at, play).then(() => {
+      // a burned disc can switch players between tracks: what this one can do may differ
+      if (src !== this.source) return
+      this.set({ caps: src.caps })
+      this.applyRate(true)
+    })
     if (play) this.clockStart()
     if (changed && this.s.sync.on && this.s.caps?.beatDetect) void this.detectTempo()
   }
@@ -463,8 +479,29 @@ export class Deck {
     this.touch()
     const level = Math.round(clamp(v, 0, 100))
     this.set({ level })
-    this.source?.setVolume(level / 100)
+    this.applyVolume()
   }
+  private applyVolume() {
+    const src = this.source
+    if (!src) return
+    src.setVolume((this.s.level / 100) * (src.kind === 'local' ? 1 : this.mixGain))
+  }
+
+  /** set by the mixer: 0..1, applied to streams through their player volume */
+  setMixGain(g: number) {
+    this.mixGain = clamp(g, 0, 1)
+    this.applyVolume()
+  }
+
+  get sourceKind() {
+    return this.source?.kind ?? null
+  }
+
+  /** tempo of the current track (local files only) */
+  trackBpm() {
+    return this.source?.detectBpm?.(this.s.track) ?? Promise.resolve(null)
+  }
+
 
   /* ---------------- numpad / enter ---------------- */
 

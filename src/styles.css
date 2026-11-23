@@ -469,41 +469,23 @@ button {
   outline: calc(var(--u) * 0.8) solid rgb(255 91 26 / 0.7);
   outline-offset: calc(var(--u) * -0.8);
 }
-/* printed face (cover art, or the YouTube video) runs from the hub to the rim */
-.disc-video,
-.disc img {
-  mask: radial-gradient(circle closest-side at 50% 50%, transparent 0 29.5%, #000 29.7%);
-}
-.disc-video {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  /* a 16:9 player, cropped to the circle */
-  width: 177.78%;
-  left: -38.89%;
-  /* the disc is the middle 56.25 % of this box: an ellipse that is a circle on screen */
-  mask: radial-gradient(ellipse 28.125% 50% at 50% 50%, transparent 0 29.5%, #000 29.7%);
-}
-.disc-video > *,
-.disc-video iframe {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
-}
-.disc-video:empty {
-  display: none;
-}
-.disc img {
+.disc-print {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
 }
-.disc img.under {
-  visibility: hidden;
+/* small capitals, like the printing on TE's utility disc */
+.disc-type text {
+  font-family: 'Manrope', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 1.85px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+.disc-type .disc-title {
+  font-size: 2.3px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
 }
 .disc-shine {
   position: absolute;
@@ -616,6 +598,521 @@ button {
 }
 .help dd {
   margin: 0;
+}
+
+@media (max-width: 760px) {
+  .rig {
+    grid-template-columns: 1fr;
+    width: min(calc(100vw - 32px), 740px);
+    gap: 24px;
+  }
+  .sidekick-wrap {
+    grid-column: 1;
+  }
+}
+
+/* ------------------------------------------------------------ sidekick (EP-136) */
+/* sizes in its own plate units (202 x 552); scaled to the BC-1's real size */
+
+/* BC-1 (| sidekick): the deck's height sets the scale */
+.solo,
+.rig {
+  display: grid;
+  align-items: start;
+}
+.solo {
+  grid-template-columns: 1fr;
+  width: min(calc(100vw - 32px), calc((100dvh - 56px) * 370 / 511));
+}
+.rig {
+  /* BC-1 174 mm, gap, sidekick 88 mm: both 240 mm tall */
+  grid-template-columns: 740fr 44fr 374fr;
+  /* room above for the patch cable's arc */
+  position: relative;
+  margin-top: 64px;
+  width: min(calc(100vw - 32px), calc((100dvh - 120px) * 1158 / 1022));
+}
+.jack-anchor {
+  pointer-events: none;
+}
+.cable {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 5;
+}
+.cable path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cable-edge {
+  stroke: #8c8b87;
+}
+.cable-body {
+  stroke: #e8e7e3;
+}
+.cable-shine {
+  stroke: rgb(255 255 255 / 0.75);
+  transform: translate(-0.6px, -0.8px);
+}
+.cable .plug {
+  pointer-events: auto;
+  cursor: grab;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.3));
+}
+.cable .plug:active {
+  cursor: grabbing;
+}
+.solo .device-wrap,
+.rig .device-wrap {
+  grid-column: 1;
+  width: 100%;
+}
+.sidekick-wrap {
+  grid-column: 3;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 202 / 552;
+}
+.sidekick {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  border-radius: calc(var(--u) * 2.5);
+  background: linear-gradient(180deg, #b9b9b8, #a9a9a8 45%, #9f9f9e);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.5),
+    0 1px 0 #8e8e8d,
+    0 2px 0 #858584,
+    0 3px 0 #7c7c7b,
+    0 34px 50px -22px rgb(60 52 40 / 0.5),
+    0 10px 18px -6px rgb(60 52 40 / 0.22);
+  font-family: 'Manrope', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  overflow: hidden;
+}
+.sidekick > * {
+  position: absolute;
+}
+.sidekick .print {
+  font-size: calc(var(--u) * 5.1);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: #2f2f2f;
+}
+.sidekick .print.sk-num {
+  font-size: calc(var(--u) * 12);
+  font-weight: 200;
+  letter-spacing: 0;
+}
+
+/* top edge: jacks and the power toggle */
+.sk-band {
+  display: flex;
+  font-size: calc(var(--u) * 6.2);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid rgb(0 0 0 / 0.12);
+}
+.sk-band > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.sk-band-out {
+  background: #dcdcda;
+  color: #4a4a4a;
+}
+.sk-band-in {
+  background: #ff5a1f;
+  color: #fff6ef;
+  gap: calc(var(--u) * 8);
+}
+.sk-band-in i {
+  font-style: normal;
+  position: relative;
+}
+.sk-input small {
+  position: absolute;
+  top: calc(var(--u) * -4.6);
+  font-size: calc(var(--u) * 3.2);
+  white-space: nowrap;
+}
+.sk-input small.ch1 {
+  left: calc(var(--u) * -1);
+}
+.sk-input small.ch2 {
+  right: calc(var(--u) * -1);
+}
+.sk-band-usb {
+  background: #6b6b6b;
+  color: #ececec;
+}
+.sk-band-pwr {
+  background: #dcdcda;
+}
+.sk-power {
+  position: relative;
+  width: calc(var(--u) * 21);
+  height: calc(var(--u) * 11);
+  border-radius: 999px;
+  background: #c9c9c7;
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+}
+.sk-power.on {
+  background: #f2541a;
+}
+.sk-power svg {
+  position: absolute;
+  left: calc(var(--u) * 2.2);
+  top: calc(var(--u) * 3);
+  width: calc(var(--u) * 5);
+  height: calc(var(--u) * 5);
+  fill: none;
+  stroke: rgb(255 255 255 / 0.7);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.sk-power input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.sk-power span {
+  position: absolute;
+  top: calc(var(--u) * 0.5);
+  left: calc(var(--u) * 0.5);
+  width: calc(var(--u) * 10);
+  height: calc(var(--u) * 10);
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #ff9a6a, #ff5a1f 60%, #e2460d);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  transition: left 120ms;
+}
+.sk-power.on span {
+  left: calc(var(--u) * 10.5);
+}
+
+/* the warm white lid with the printing */
+.sk-lid {
+  background: linear-gradient(180deg, #ecebe8, #e2e1de 60%, #d9d8d5);
+  box-shadow:
+    inset 0 -1px 0 rgb(0 0 0 / 0.1),
+    0 calc(var(--u) * 0.8) calc(var(--u) * 1.6) rgb(0 0 0 / 0.18);
+  z-index: 1;
+}
+.sk-lid > * {
+  position: absolute;
+}
+.sk-logo {
+  font-size: calc(var(--u) * 27);
+  font-weight: 200;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  color: #262626;
+}
+.sk-dash {
+  background: #262626;
+}
+.sk-sub {
+  font-size: calc(var(--u) * 11.5);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: #262626;
+}
+.sk-jp {
+  font-size: calc(var(--u) * 13);
+  font-weight: 400;
+  line-height: 1;
+  color: #ff5a1f;
+  letter-spacing: 0.06em;
+}
+.sk-model {
+  font-size: calc(var(--u) * 9.6);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  color: #262626;
+}
+/* corner screw recesses: a faint ring in the lid */
+.sk-screw {
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 0.45) rgb(0 0 0 / 0.16),
+    inset calc(var(--u) * 0.5) calc(var(--u) * 0.7) calc(var(--u) * 0.9) rgb(0 0 0 / 0.08);
+}
+.sk-system {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+}
+.sk-system:active {
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 0.45) rgb(0 0 0 / 0.3),
+    inset calc(var(--u) * 0.6) calc(var(--u) * 0.9) calc(var(--u) * 1.2) rgb(0 0 0 / 0.2);
+}
+
+/* two-tier knobs: a flat base disc and a smaller raised cap of the same colour,
+   lit from above; EQ knobs carry a pointer tab on the base */
+.sk-knob {
+  cursor: ns-resize;
+  touch-action: none;
+}
+.sk-knob-shade,
+.sk-knob-base,
+.sk-knob-rim {
+  position: absolute;
+  inset: calc(var(--u) * 2);
+  border-radius: 50%;
+  pointer-events: none;
+}
+/* still: the knob's shadow on the plate */
+.sk-knob-shade {
+  box-shadow:
+    0 calc(var(--u) * 1.6) calc(var(--u) * 2.4) rgb(0 0 0 / 0.32),
+    0 calc(var(--u) * 0.4) calc(var(--u) * 0.6) rgb(0 0 0 / 0.25);
+}
+/* turns: flat colour, carries the pointer tab */
+.sk-knob-base {
+  background: var(--kb);
+}
+/* still: light catching the top edge */
+.sk-knob-rim {
+  box-shadow: inset 0 calc(var(--u) * 0.5) 0 rgb(255 255 255 / var(--kh, 0.25));
+}
+.sk-knob-base i {
+  position: absolute;
+  left: calc(50% - var(--u) * 1.4);
+  top: calc(var(--u) * 1.8);
+  width: calc(var(--u) * 2.8);
+  height: calc(var(--u) * 5);
+  border-radius: calc(var(--u) * 0.6);
+  background: var(--kt);
+  box-shadow: 0 calc(var(--u) * 0.5) calc(var(--u) * 0.6) rgb(0 0 0 / 0.25);
+}
+.sk-knob-cap {
+  position: absolute;
+  width: calc(var(--u) * 18);
+  height: calc(var(--u) * 18);
+  left: calc(50% - var(--u) * 9);
+  top: calc(50% - var(--u) * 10.2);
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 30%, var(--kc-hi) 0, var(--kc) 70%);
+  box-shadow:
+    0 calc(var(--u) * 1.6) calc(var(--u) * 1.8) rgb(0 0 0 / 0.38),
+    inset 0 calc(var(--u) * -0.8) calc(var(--u) * 0.8) rgb(0 0 0 / 0.12);
+}
+.sk-knob.orange {
+  --kb: #ff5b1c;
+  --kc: #fb5719;
+  --kc-hi: #ff7a40;
+  --kh: 0.3;
+}
+.sk-knob.white {
+  --kb: #ecebea;
+  --kc: #ecebea;
+  --kc-hi: #fafafa;
+  --kt: #c9c8c6;
+  --kh: 0.8;
+}
+.sk-knob.grey {
+  --kb: #7b7b7b;
+  --kc: #727272;
+  --kc-hi: #858585;
+  --kt: #9c9c9c;
+  --kh: 0.18;
+}
+.sk-knob.black {
+  --kb: #1d1d1d;
+  --kc: #1a1a1a;
+  --kc-hi: #2c2c2c;
+  --kt: #6a6a6a;
+  --kh: 0.1;
+}
+
+/* buttons: rectangular caps in a dark frame */
+.sidekick .key-well.sk-key {
+  border-radius: calc(var(--u) * 1.4);
+  background: #2a2a2a;
+  box-shadow: 0 calc(var(--u) * 0.4) 0 rgb(255 255 255 / 0.35);
+}
+.sidekick .key-well.sk-key .key {
+  inset: calc(var(--u) * 1);
+  border-radius: calc(var(--u) * 0.9);
+}
+.sidekick .key-well.sk-key.dark .key {
+  background: linear-gradient(180deg, #333, #262626);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
+  color: #f2f2f2;
+}
+.sidekick .key-well.sk-key.grey .key {
+  background: linear-gradient(180deg, #808080, #6f6f6f);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25);
+  color: #f0f0f0;
+}
+.sidekick .key-well.sk-key.light .key {
+  background: linear-gradient(180deg, #a8a8a8, #979797);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
+  color: #fafafa;
+}
+.sidekick .key-well.sk-key.lit .key {
+  color: #ff7a40;
+}
+.sidekick .key-well.sk-key.focus .key {
+  color: #fff;
+}
+.sk-legend {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--u) * 5);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+/* faders */
+.sk-fader-slot {
+  position: absolute;
+  border-radius: calc(var(--u) * 2.5);
+  background: linear-gradient(90deg, #0e0e0e, #262626 50%, #0e0e0e);
+  box-shadow:
+    inset 0 calc(var(--u) * 0.6) calc(var(--u) * 1) rgb(0 0 0 / 0.8),
+    0 calc(var(--u) * 0.3) 0 rgb(255 255 255 / 0.3);
+}
+.sk-fader-tick {
+  position: absolute;
+  left: calc(var(--u) * -7.5);
+  right: calc(var(--u) * -7.5);
+  height: calc(var(--u) * 0.5);
+  background: #3a3a3a;
+}
+.sk-fader-cap {
+  position: absolute;
+  left: 0;
+  border-radius: 50%;
+  cursor: ns-resize;
+  background: radial-gradient(circle at 50% 35%, #7d7d7d, #6c6c6c 70%);
+  box-shadow:
+    0 calc(var(--u) * 1.8) calc(var(--u) * 2.2) rgb(0 0 0 / 0.4),
+    0 calc(var(--u) * 0.4) calc(var(--u) * 0.5) rgb(0 0 0 / 0.3),
+    inset 0 calc(var(--u) * 0.5) 0 rgb(255 255 255 / 0.15);
+}
+
+/* force pad: a soft grey disc that glows orange under pressure */
+.sk-pad {
+  border-radius: 50%;
+  cursor: pointer;
+  /* a shallow dish lit from above: the upper inner wall falls into shade,
+     the lower inner wall catches the light, the rim stands slightly proud */
+  background: radial-gradient(circle at 50% 62%, #dcdcdb 0, #d3d3d2 45%, #c8c8c7 78%, #d6d6d5 100%);
+  box-shadow:
+    0 calc(var(--u) * 1.2) calc(var(--u) * 1.8) rgb(0 0 0 / 0.26),
+    0 calc(var(--u) * -0.3) 0 rgb(255 255 255 / 0.55),
+    inset 0 calc(var(--u) * 1.6) calc(var(--u) * 2.2) rgb(0 0 0 / 0.16),
+    inset 0 calc(var(--u) * -1) calc(var(--u) * 1.2) rgb(255 255 255 / 0.55);
+  transition:
+    transform 60ms,
+    filter 60ms;
+}
+.sk-pad.down {
+  transform: scale(0.985);
+  filter: brightness(0.95);
+}
+.sk-bracket {
+  pointer-events: none;
+  fill: none;
+  stroke: rgb(255 255 255 / 0.75);
+  stroke-width: 0.8;
+}
+
+/* mod stick: orange cap in a dark slot */
+.sidekick .jog {
+  border-radius: calc(var(--u) * 0.8);
+  background: linear-gradient(180deg, #2a2a2a, #3a3a3a);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.2) rgb(235 235 235 / 0.55),
+    inset 0 calc(var(--u) * 2) calc(var(--u) * 2) rgb(0 0 0 / 0.5);
+}
+.sidekick .jog-cap {
+  border-radius: calc(var(--u) * 1.2);
+  background: radial-gradient(circle at 50% 30%, #ff7438, #f8531a 70%);
+  box-shadow:
+    0 calc(var(--u) * 1.2) calc(var(--u) * 1.4) rgb(60 10 0 / 0.5),
+    inset 0 calc(var(--u) * 0.5) 0 rgb(255 190 150 / 0.4);
+}
+
+.sk-jack {
+  bottom: 0;
+  top: auto !important;
+  border-radius: calc(var(--u) * 8) calc(var(--u) * 8) 0 0;
+  background: #1a1a1a;
+}
+
+/* LCD: orange pixels on black */
+.sk-lcd {
+  border-radius: calc(var(--u) * 0.8);
+  background: #0a0605;
+  box-shadow:
+    0 0 0 calc(var(--u) * 1) #1d1d1d,
+    0 calc(var(--u) * 0.6) 0 calc(var(--u) * 1) rgb(255 255 255 / 0.25);
+  overflow: hidden;
+}
+.lcd {
+  display: block;
+  width: 100%;
+  height: 100%;
+  font-family: 'Silkscreen', monospace;
+}
+.lcd .lcd-bg {
+  fill: #0a0605;
+}
+.lcd .on {
+  fill: #ff6a1f;
+}
+.lcd .dim {
+  fill: #3a1406;
+}
+.lcd .grid {
+  fill: #1e0b04;
+}
+.lcd .frame {
+  fill: none;
+  stroke: #ff6a1f;
+  stroke-width: 1;
+}
+.lcd text {
+  font-size: 8px;
+  fill: #ff6a1f;
+}
+.lcd text.ink {
+  fill: #0a0605;
+}
+.lcd text.big {
+  font-size: 11px;
+}
+.lcd text.huge {
+  font-size: 22px;
+}
+.lcd text.dimtxt {
+  font-size: 6px;
+  fill: #8a3a12;
 }
 
 /* ------------------------------------------------------------ dialogs */
@@ -762,6 +1259,123 @@ button {
 .lid-primary:disabled {
   background: #d8d6cf;
   color: #9a978f;
+  cursor: default;
+}
+
+/* burn dialog */
+.lid.burn {
+  width: min(600px, calc(100vw - 32px));
+}
+.burn .burn-title {
+  margin-top: 24px;
+}
+.burn-colors {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.burn-colors button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+  cursor: pointer;
+}
+.burn-colors button.on {
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.12),
+    0 0 0 2px #efeee9,
+    0 0 0 3.5px var(--ink);
+}
+.burn-list {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  max-height: min(340px, 40vh);
+  overflow-y: auto;
+  border-top: 1.5px solid var(--ink);
+  scrollbar-width: thin;
+  scrollbar-color: #cfccc4 transparent;
+}
+.burn-row {
+  display: grid;
+  grid-template-columns: 16px auto 1fr auto auto 16px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid #dcd8cf;
+  font-size: 13px;
+  background: #efeee9;
+}
+.burn-row.dragging {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 6px 16px -8px rgb(40 36 28 / 0.4);
+}
+.burn-grip {
+  all: unset;
+  display: grid;
+  place-items: center;
+  height: 16px;
+  cursor: grab;
+  touch-action: none;
+}
+.burn-grip:active {
+  cursor: grabbing;
+}
+.burn-grip svg {
+  width: 6px;
+  height: 10px;
+  fill: #aeaba3;
+}
+.burn-n,
+.burn-d {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: #aeaba3;
+}
+.burn-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.burn-s {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #b3b0a8;
+}
+.burn-x {
+  all: unset;
+  font-size: 15px;
+  line-height: 1;
+  color: #aeaba3;
+  cursor: pointer;
+  text-align: center;
+}
+.burn-x:hover {
+  color: var(--ink);
+}
+.burn-empty {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #aeaba3;
+}
+.burn-add {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-top: 24px;
+}
+.burn .burn-link {
+  margin-top: 0;
+  font-size: 15px;
+  border-bottom-width: 1px;
+}
+.burn-add .lid-text:disabled {
+  color: #b3b0a8;
   cursor: default;
 }
 

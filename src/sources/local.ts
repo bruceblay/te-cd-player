@@ -30,16 +30,20 @@ export class LocalSource implements Source {
   constructor(
     files: File[],
     private cb: SourceCallbacks,
+    /** the deck's output bus: speakers by default, or a mixer channel */
+    out: AudioNode,
+    /** compilations keep the order the user arranged */
+    keepOrder = false,
   ) {
-    this.files = files
-      .filter((f) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name))
-      .sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }))
+    this.files = files.filter((f) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name))
+    if (!keepOrder)
+      this.files.sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }))
     this.el.preload = 'auto'
     this.el.preservesPitch = false // true varispeed: pitch follows speed
     const src = this.ctx.createMediaElementSource(this.el)
     const split = this.ctx.createChannelSplitter(2)
     src.connect(this.gain)
-    this.gain.connect(this.ctx.destination)
+    this.gain.connect(out)
     this.gain.connect(split)
     this.aL.fftSize = this.aR.fftSize = 1024
     split.connect(this.aL, 0)
