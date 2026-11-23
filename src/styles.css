@@ -1,0 +1,787 @@
+:root {
+  --ground: #e6e3dc;
+  --ink: #232321;
+  --ink-soft: #6f6c65;
+  --print: #2d2e2f;
+  --orange: #ff5a1f;
+  --red: #ff2d1c;
+  --play: #1e3fa8;
+  /* brushed, bead-blasted top plate, shared by the device and its dialogs */
+  --plate-surface:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(90% 55% at 30% 8%, rgb(255 255 252 / 0.55), transparent 70%),
+    radial-gradient(120% 80% at 70% 105%, rgb(120 118 110 / 0.18), transparent 60%),
+    linear-gradient(165deg, #d3d3cf, #c8c8c3 55%, #bfbfba);
+  color-scheme: light;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--ground);
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  /* a soft overhead light on a pale table */
+  background:
+    radial-gradient(70% 60% at 50% 42%, #f2f0eb, transparent 70%),
+    var(--ground);
+  -webkit-font-smoothing: antialiased;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px 16px 20px;
+}
+.offscreen {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 400px;
+  height: 300px;
+  pointer-events: none;
+}
+.offscreen > *,
+.offscreen iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* ------------------------------------------------------------ device */
+/* all sizes in plate units: var(--u) = 1 unit of TE's 370 x 511 diagram */
+
+.device-wrap {
+  position: relative;
+  /* fill the window height (or width on phones); the power switch sticks up 8 units */
+  width: min(calc(100vw - 32px), calc((100dvh - 56px) * 370 / 511));
+  aspect-ratio: 370 / 511;
+}
+.device {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  border-radius: calc(var(--u) * 2.2);
+  /* edge thickness and the cast shadow; the plate surface itself is .plate */
+  box-shadow:
+    0 1px 0 #a7a7a2,
+    0 2px 0 #9d9d98,
+    0 3px 0 #92928d,
+    0 4px 0 #8a8a85,
+    0 34px 50px -22px rgb(60 52 40 / 0.5),
+    0 10px 18px -6px rgb(60 52 40 / 0.22);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  font-family: 'Barlow', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+.device > * {
+  position: absolute;
+}
+/* the top plate surface */
+.plate {
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--plate-surface);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.85),
+    inset 1px 0 0 rgb(255 255 255 / 0.5),
+    inset -1px 0 0 rgb(0 0 0 / 0.08),
+    inset 0 -1px 0 rgb(0 0 0 / 0.1);
+}
+/* finger pockets: milled a little way into the plate, same metal on the floor.
+   Light from the top left: the upper-left wall throws a soft shadow, the lower-right lip catches light. */
+.hole {
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at 55% 60%, #cbcbc6, #c3c3be 75%);
+  box-shadow:
+    inset calc(var(--u) * 0.8) calc(var(--u) * 1.2) calc(var(--u) * 1.6) rgb(0 0 0 / 0.22),
+    inset calc(var(--u) * -0.4) calc(var(--u) * -0.5) 0 rgb(255 255 255 / 0.5),
+    0 calc(var(--u) * 0.3) 0 rgb(255 255 255 / 0.55);
+}
+.plate-art {
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.mech-print {
+  font: 500 3.6px 'Barlow', sans-serif;
+  fill: #c9cacb;
+  letter-spacing: 0.02em;
+}
+.mech-warn {
+  font: 500 2.5px 'Barlow', sans-serif;
+  fill: #b9babc;
+  letter-spacing: 0.03em;
+}
+.cd-mark {
+  fill: #2d2e2f;
+}
+.cd-small {
+  font: 600 3.1px 'Barlow', sans-serif;
+  letter-spacing: 0.04em;
+}
+.cd-disc {
+  font: 800 17px 'Arial Black', 'Helvetica Neue', Arial, sans-serif;
+  fill: none;
+  stroke: #2d2e2f;
+  stroke-width: 0.55;
+  paint-order: stroke;
+  letter-spacing: -0.04em;
+}
+
+/* printed legends on the plate */
+.print {
+  font-size: calc(var(--u) * 4);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  color: var(--print);
+  white-space: nowrap;
+  font-weight: 500;
+}
+.print.center {
+  text-align: center;
+}
+.print.rule {
+  padding-bottom: calc(var(--u) * 0.9);
+  border-bottom: calc(var(--u) * 0.45) solid var(--print);
+}
+
+/* ------------------------------------------------------------ keys */
+
+/* the square hole in the plate */
+.key-well {
+  border-radius: calc(var(--u) * 1.2);
+  background: #75756f;
+  box-shadow:
+    inset 0 calc(var(--u) * 0.5) calc(var(--u) * 0.8) rgb(0 0 0 / 0.45),
+    0 calc(var(--u) * 0.25) 0 rgb(255 255 255 / 0.6);
+}
+.key {
+  position: absolute;
+  inset: calc(var(--u) * 0.7);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: calc(var(--u) * 1);
+  transition:
+    transform 50ms,
+    box-shadow 50ms,
+    filter 50ms;
+  outline-offset: 2px;
+}
+.key.down {
+  transform: translateY(calc(var(--u) * 0.5)) scale(0.985);
+  filter: brightness(0.94);
+}
+/* raised cap: a bevelled rim around a flat face, lit from the top left */
+.key-well.small .key {
+  background: radial-gradient(120% 120% at 30% 20%, #4d4d50, #38383a 70%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.1) #59595c,
+    inset calc(var(--u) * 0.4) calc(var(--u) * 0.4) 0 calc(var(--u) * 1.1) #707073,
+    0 calc(var(--u) * 0.9) calc(var(--u) * 1.2) rgb(0 0 0 / 0.4);
+  color: #ecebe7;
+}
+.key-well.black:not(.small) .key {
+  background: radial-gradient(120% 120% at 30% 20%, #2d2d2f, #1c1c1e 70%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.4) #2a2a2c,
+    inset calc(var(--u) * 0.5) calc(var(--u) * 0.5) 0 calc(var(--u) * 1.4) #48484b,
+    0 calc(var(--u) * 1.2) calc(var(--u) * 1.6) rgb(0 0 0 / 0.42);
+  color: #f2f1ed;
+}
+.key-well.grey .key {
+  background: radial-gradient(120% 120% at 30% 20%, #d9d9d5, #cacac5 70%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.4) #bdbdb8,
+    inset calc(var(--u) * 0.5) calc(var(--u) * 0.5) 0 calc(var(--u) * 1.4) #e4e4e1,
+    0 calc(var(--u) * 1.2) calc(var(--u) * 1.6) rgb(0 0 0 / 0.3);
+  color: #3a3b3c;
+}
+.key-well.blue .key {
+  background: radial-gradient(120% 120% at 30% 20%, #23386e, #162650 70%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.4) #1a2c5c,
+    inset calc(var(--u) * 0.5) calc(var(--u) * 0.5) 0 calc(var(--u) * 1.4) #34497f,
+    0 calc(var(--u) * 1.2) calc(var(--u) * 1.6) rgb(5 15 50 / 0.45);
+  color: #d4dbef;
+}
+.legend {
+  position: absolute;
+  pointer-events: none;
+  font-weight: 500;
+  line-height: 1;
+}
+.legend.center {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: 'Chakra Petch', 'Barlow', sans-serif;
+  font-size: calc(var(--u) * 7);
+  padding-top: calc(var(--u) * 0.3);
+}
+.legend.top {
+  left: 0;
+  right: 0;
+  top: calc(var(--u) * 3.6);
+  text-align: center;
+  font-size: calc(var(--u) * 3.8);
+  letter-spacing: 0.04em;
+}
+.legend.corner {
+  left: calc(var(--u) * 3.6);
+  top: calc(var(--u) * 3);
+  font-size: calc(var(--u) * 8);
+  font-weight: 400;
+}
+.legend.glyph {
+  width: calc(var(--u) * 5.5);
+  height: calc(var(--u) * 3.7);
+  left: calc(50% - var(--u) * 2.75);
+  right: auto;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+.led {
+  width: calc(var(--u) * 2.8);
+  height: calc(var(--u) * 2.8);
+  border-radius: 50%;
+  background: #6e6e6a;
+  box-shadow:
+    inset 0 calc(var(--u) * 0.3) calc(var(--u) * 0.5) rgb(0 0 0 / 0.5),
+    0 calc(var(--u) * 0.2) 0 rgb(255 255 255 / 0.6);
+}
+.led.on {
+  background: radial-gradient(circle at 40% 35%, #fff 0 12%, var(--led) 45%);
+  box-shadow:
+    0 0 calc(var(--u) * 2.4) var(--led),
+    0 0 calc(var(--u) * 0.6) var(--led);
+}
+.led.blink {
+  animation: blink 0.5s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    background: #6e6e6a;
+    box-shadow: inset 0 calc(var(--u) * 0.3) calc(var(--u) * 0.5) rgb(0 0 0 / 0.5);
+  }
+}
+
+/* ------------------------------------------------------------ knobs, jog */
+
+/* the knob sits in a turned, recessed cup */
+.knob {
+  cursor: ns-resize;
+  border-radius: 50%;
+  outline-offset: 2px;
+  background: radial-gradient(circle at 50% 50%, #c2c2bd 0 52%, #b2b2ad 66%, #d9d9d5 80%, #c9c9c4 100%);
+  box-shadow:
+    inset 0 calc(var(--u) * 1) calc(var(--u) * 1.6) rgb(0 0 0 / 0.32),
+    inset 0 calc(var(--u) * -0.6) calc(var(--u) * 0.8) rgb(255 255 255 / 0.5),
+    0 calc(var(--u) * 0.3) 0 rgb(255 255 255 / 0.7);
+}
+.knob-shadow {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(calc(var(--u) * 2), calc(var(--u) * 3));
+  background: rgb(0 0 0 / 0.35);
+  filter: blur(calc(var(--u) * 1.6));
+}
+.knob-cap,
+.knob-dial {
+  position: absolute;
+  border-radius: 50%;
+}
+/* cylinders seen from just above: a lit top face and a sliver of side */
+.knob.vari .knob-cap {
+  background:
+    repeating-conic-gradient(from 0deg, rgb(0 0 0 / 0.1) 0 4deg, transparent 4deg 8deg),
+    radial-gradient(circle at 36% 30%, #8a8a8e, #5a5a5e 55%, #48484c);
+  box-shadow:
+    calc(var(--u) * 0.6) calc(var(--u) * 1.2) 0 #333336,
+    inset 0 0 0 calc(var(--u) * 0.5) rgb(255 255 255 / 0.12);
+}
+.knob.level .knob-cap {
+  background: radial-gradient(circle at 36% 30%, #ffffff, #f2efe7 55%, #dedad0);
+  box-shadow:
+    calc(var(--u) * 0.6) calc(var(--u) * 1.2) 0 #b4b0a5,
+    inset 0 0 0 calc(var(--u) * 0.4) rgb(0 0 0 / 0.05);
+}
+.knob-mark {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--u) * 1.2);
+  width: calc(var(--u) * 0.9);
+  height: calc(var(--u) * 3.6);
+  margin-left: calc(var(--u) * -0.45);
+  border-radius: 2px;
+  background: rgb(0 0 0 / 0.55);
+}
+.knob.vari .knob-mark {
+  background: rgb(255 255 255 / 0.55);
+}
+
+/* translucent orange guide with the stick in it */
+.jog {
+  border-radius: calc(var(--u) * 1.4);
+  background: linear-gradient(180deg, #6e1d09, #a63212 70%, #c4421a);
+  box-shadow:
+    inset 0 calc(var(--u) * 0.8) calc(var(--u) * 1.4) rgb(0 0 0 / 0.55),
+    inset 0 0 0 calc(var(--u) * 0.6) rgb(255 120 60 / 0.35),
+    0 calc(var(--u) * 0.25) 0 rgb(255 255 255 / 0.6);
+}
+.jog-cap {
+  position: absolute;
+  border-radius: calc(var(--u) * 1.2);
+  cursor: ew-resize;
+  background: radial-gradient(120% 120% at 30% 20%, #ff8346, #ff5a1f 55%, #ec4a10);
+  box-shadow:
+    inset calc(var(--u) * 0.5) calc(var(--u) * 0.5) 0 rgb(255 200 160 / 0.45),
+    0 calc(var(--u) * 1.4) calc(var(--u) * 1.6) rgb(90 20 0 / 0.5);
+  transition: transform 120ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.jog-cap:active {
+  transition: none;
+}
+
+/* ------------------------------------------------------------ top edge */
+
+.power-switch {
+  cursor: pointer;
+}
+.power-switch input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.power-nub {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  border-radius: calc(var(--u) * 1) calc(var(--u) * 1) 0 0;
+  background: linear-gradient(90deg, #e24a0e, #ff6a2c 40%, #ff5a1f);
+  box-shadow: 0 -1px 2px rgb(0 0 0 / 0.2);
+  transition: left 120ms;
+}
+.power-switch.on .power-nub {
+  left: calc(var(--u) * 8);
+}
+.power-switch:has(input:focus-visible) {
+  outline: 2px solid #1a2c5c;
+  outline-offset: 2px;
+}
+.edge-button {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: calc(var(--u) * 1) calc(var(--u) * 1) 0 0;
+  background: linear-gradient(90deg, #b9b9b4, #e6e6e2 45%, #c4c4bf);
+}
+.edge-button:active {
+  transform: translateY(1px);
+}
+.port-live.on {
+  box-shadow: 0 0 0 calc(var(--u) * 0.6) var(--orange);
+}
+.port-live {
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------ disc */
+
+.turntable {
+  pointer-events: none;
+}
+.tt-spin {
+  /* the viewBox is centred on the spindle (-40 -40 80 80), so its 0,0 is the axis.
+     (50% 50% of the view-box would be 40,40: a corner, which made it orbit) */
+  transform-box: view-box;
+  transform-origin: 0 0;
+  animation: spin 1.6s linear infinite paused;
+}
+.tt-spin.spin {
+  animation-play-state: running;
+}
+.tt-print {
+  font: 500 3.4px 'Barlow', sans-serif;
+  fill: #b8b8b6;
+  letter-spacing: 0.12em;
+}
+
+.disc-shadow {
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(calc(var(--u) * 1.4), calc(var(--u) * 2.6));
+  background: radial-gradient(circle, transparent 0 28%, rgb(40 36 30 / 0.3) 40%, rgb(40 36 30 / 0.3) 96%, transparent 100%);
+  filter: blur(calc(var(--u) * 2.2));
+}
+.disc {
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+  /* centre hole */
+  mask: radial-gradient(circle, transparent 0 6.4%, #000 6.6%);
+}
+.disc-face {
+  position: absolute;
+  inset: 0;
+  animation: spin 1.6s linear infinite paused;
+}
+.disc-face.spin {
+  animation-play-state: running;
+}
+.disc.empty {
+  display: none;
+}
+/* silver data area outside the clear hub */
+.disc::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 20deg, #e7e9ee, #c6ccd8, #f0eef2, #d0d6e2, #e7e4ec, #c4cad6, #e7e9ee);
+  mask: radial-gradient(circle, transparent 0 29.4%, #000 29.6%);
+}
+.disc-hit {
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.disc-hit:focus-visible {
+  outline: calc(var(--u) * 0.8) solid rgb(255 91 26 / 0.7);
+  outline-offset: calc(var(--u) * -0.8);
+}
+/* printed face (cover art, or the YouTube video) runs from the hub to the rim */
+.disc-video,
+.disc img {
+  mask: radial-gradient(circle closest-side at 50% 50%, transparent 0 29.5%, #000 29.7%);
+}
+.disc-video {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  /* a 16:9 player, cropped to the circle */
+  width: 177.78%;
+  left: -38.89%;
+  /* the disc is the middle 56.25 % of this box: an ellipse that is a circle on screen */
+  mask: radial-gradient(ellipse 28.125% 50% at 50% 50%, transparent 0 29.5%, #000 29.7%);
+}
+.disc-video > *,
+.disc-video iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.disc-video:empty {
+  display: none;
+}
+.disc img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.disc img.under {
+  visibility: hidden;
+}
+.disc-shine {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 210deg, transparent, rgb(255 255 255 / 0.16) 7%, transparent 16%, transparent 50%, rgb(255 255 255 / 0.12) 57%, transparent 66%);
+  mix-blend-mode: screen;
+  mask: radial-gradient(circle, transparent 0 29.6%, #000 29.8%);
+}
+/* clear polycarbonate hub with its stacking ring, and the disc's rim */
+.disc-hub {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    transparent 0 6.6%,
+    rgb(225 230 238 / 0.14) 6.7% 20.8%,
+    rgb(240 244 250 / 0.4) 20.9% 21.8%,
+    rgb(225 230 238 / 0.14) 21.9% 28.8%,
+    rgb(120 126 136 / 0.45) 28.9% 29.6%,
+    transparent 29.7% 99.2%,
+    rgb(70 72 80 / 0.55) 99.3%
+  );
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------ displays */
+
+.window {
+  border-radius: calc(var(--u) * 0.8);
+  background: linear-gradient(180deg, #050505, #121212);
+  box-shadow:
+    inset 0 calc(var(--u) * 0.5) calc(var(--u) * 1) rgb(0 0 0 / 0.9),
+    0 0 0 calc(var(--u) * 0.35) #8f8f8a,
+    0 calc(var(--u) * 0.5) 0 calc(var(--u) * 0.35) rgb(255 255 255 / 0.55);
+}
+.window > .seg-group {
+  position: absolute;
+}
+.seg-display {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+.seg-cell {
+  flex: 1;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+.seg {
+  height: 100%;
+  width: 100%;
+  overflow: visible;
+}
+.seg .off {
+  fill: rgb(255 45 28 / 0.045);
+}
+.seg .on {
+  fill: var(--red);
+  filter: drop-shadow(0 0 1.6px rgb(255 40 20 / 0.85));
+}
+.vu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(var(--u) * 1.2);
+  padding: calc(var(--u) * 1.6) calc(var(--u) * 2.4);
+}
+.vu-col {
+  display: grid;
+  grid-template-rows: repeat(9, 1fr);
+  gap: calc(var(--u) * 0.8);
+}
+.vu-col span {
+  border-radius: 0.5px;
+  background: rgb(255 45 28 / 0.06);
+}
+.vu-col span.on {
+  background: var(--red);
+  box-shadow: 0 0 calc(var(--u) * 1.2) rgb(255 40 20 / 0.8);
+}
+
+/* ------------------------------------------------------------ help */
+
+.help {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 6px 24px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.help div {
+  display: flex;
+  gap: 10px;
+}
+.help .wide {
+  grid-column: 1 / -1;
+}
+.help dt {
+  min-width: 74px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.help dd {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ dialogs */
+/* quiet and typographic, like a page of the manual: one hairline field, text actions,
+   a single solid button. 8 px rhythm; 11 / 13 / 22 px type. */
+
+.lid {
+  border: 0;
+  padding: 24px 28px 28px;
+  width: min(520px, calc(100vw - 32px));
+  border-radius: 6px;
+  background: #efeee9;
+  color: var(--ink);
+  font-family: 'Barlow', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.7),
+    0 0 0 1px rgb(0 0 0 / 0.06),
+    0 24px 48px -16px rgb(40 36 28 / 0.35);
+}
+.lid::backdrop {
+  background: rgb(226 223 216 / 0.55);
+  backdrop-filter: blur(2px);
+}
+.lid :focus,
+.lid :focus-visible {
+  outline: none;
+}
+.lid form {
+  margin: 0;
+}
+.lid-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.lid-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.lid-close {
+  all: unset;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #9a978f;
+  cursor: pointer;
+}
+.lid-close:hover {
+  color: var(--ink);
+}
+.lid-input {
+  display: block;
+  width: 100%;
+  margin-top: 32px;
+  padding: 0 0 8px;
+  border: 0;
+  border-bottom: 1.5px solid var(--ink);
+  border-radius: 0;
+  background: transparent;
+  font: 400 22px/1.2 'Barlow', sans-serif;
+  color: var(--ink);
+  caret-color: var(--orange);
+  text-overflow: ellipsis;
+}
+.lid-input::placeholder {
+  color: #aeaba3;
+}
+.lid-sources {
+  display: flex;
+  gap: 16px;
+  margin: 8px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #b3b0a8;
+  min-height: 1em;
+}
+.lid-sources .on {
+  color: var(--ink);
+}
+.lid-sources .bad {
+  color: #b3261a;
+}
+.lid-note {
+  margin: 16px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.lid-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 40px;
+}
+.lid-local {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.lid-text {
+  all: unset;
+  position: relative;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 120ms;
+}
+.lid-text:hover {
+  text-decoration-color: currentColor;
+}
+.lid-text.muted {
+  color: #9a978f;
+}
+.lid-text input[type='file'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.lid-primary {
+  flex: none;
+  border: 0;
+  border-radius: 3px;
+  padding: 10px 24px;
+  background: var(--ink);
+  color: #f3f2ed;
+  font: 500 13px/1 'Barlow', sans-serif;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 120ms;
+}
+.lid-primary:hover:not(:disabled) {
+  background: #000;
+}
+.lid-primary:disabled {
+  background: #d8d6cf;
+  color: #9a978f;
+  cursor: default;
+}
+
+/* keys dialog */
+.help-dialog .help {
+  margin-top: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 24px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.help-dialog .help dt {
+  min-width: 80px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .disc {
+    animation: none;
+  }
+}
+
