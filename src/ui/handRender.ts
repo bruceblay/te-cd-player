@@ -1,12 +1,14 @@
 export const HAND_STYLES = [
   { id: 'wireframe', label: 'wireframe' },
-  { id: 'man', label: 'man' },
-  { id: 'woman', label: 'woman' },
+  { id: 'man', label: 'umber' },
+  { id: 'woman', label: 'rose' },
   { id: 'simpson', label: 'simpson' },
   { id: 'goblin', label: 'goblin' },
 ] as const
 
 export type HandStyle = (typeof HAND_STYLES)[number]['id']
+
+export type MeshHandStyle = Exclude<HandStyle, 'wireframe'>
 
 export interface Pt {
   x: number
@@ -15,6 +17,9 @@ export interface Pt {
 }
 
 export interface RenderedHand {
+  slot: number
+  side: 'Left' | 'Right'
+  world?: Pt[] // camera-space joints in meters
   pts: Pt[] // 21 screen-space landmarks
   cursor: Pt
   pinched: boolean
@@ -574,14 +579,17 @@ function drawGoblinHand(mainCtx: CanvasRenderingContext2D, hand: RenderedHand) {
   mainCtx.restore()
 }
 
-export function renderHands(ctx: CanvasRenderingContext2D, hands: RenderedHand[], style: HandStyle) {
+export function renderHands(ctx: CanvasRenderingContext2D, hands: RenderedHand[], style: HandStyle, drawMesh?: (ctx: CanvasRenderingContext2D, hands: RenderedHand[], style: MeshHandStyle) => boolean) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
-  for (const hand of hands) {
+  if (!hands.length) return false
+  const drawn = style !== 'wireframe' && drawMesh?.(ctx, hands, style)
+  if (!drawn) for (const hand of hands) {
     if (style === 'wireframe') drawWireframe(ctx, hand)
     else if (style === 'man') drawHumanHand(ctx, hand, 'man')
     else if (style === 'woman') drawHumanHand(ctx, hand, 'woman')
     else if (style === 'simpson') drawSimpsonHand(ctx, hand)
     else drawGoblinHand(ctx, hand)
-    drawReticle(ctx, hand.cursor, hand.pinched, hand.pinchStrength)
   }
+  for (const hand of hands) drawReticle(ctx, hand.cursor, hand.pinched, hand.pinchStrength)
+  return style !== 'wireframe' && !drawn
 }

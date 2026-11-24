@@ -45,10 +45,12 @@ export function saveViewMode(view: ViewMode) {
 
 export function readHandStyle(): HandStyle {
   try {
+    const requested = new URLSearchParams(window.location.search).get('handStyle')
+    if (requested && HAND_STYLE_IDS.has(requested)) return requested as HandStyle
     const v = localStorage.getItem(HAND_STYLE_KEY)
-    return v && HAND_STYLE_IDS.has(v) ? (v as HandStyle) : 'wireframe'
+    return v && HAND_STYLE_IDS.has(v) ? (v as HandStyle) : 'man'
   } catch {
-    return 'wireframe'
+    return 'man'
   }
 }
 
@@ -249,7 +251,7 @@ export function SideDrawer({
           {handStatus.state === 'loading' && <p className="drawer-note">starting webcam &amp; MediaPipe…</p>}
           {handStatus.state === 'active' && (
             <p className="drawer-note">
-              tracking {handStatus.hands} {handStatus.hands === 1 ? 'hand' : 'hands'} · pinch thumb + index to click &amp; drag
+              tracking {handStatus.hands} {handStatus.hands === 1 ? 'hand' : 'hands'}{handStatus.illustratedFallback ? ' · using 2D fallback' : ''}
             </p>
           )}
           {handStatus.state === 'error' && <p className="drawer-note error">{handStatus.error}</p>}

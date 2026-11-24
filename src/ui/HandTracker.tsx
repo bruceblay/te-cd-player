@@ -4,6 +4,7 @@ import { renderHands, type HandStyle, type Pt, type RenderedHand } from './handR
 export interface HandStatus {
   state: 'off' | 'loading' | 'active' | 'error'
   hands: number
+  illustratedFallback?: boolean
   error?: string
 }
 
@@ -22,15 +23,17 @@ interface HandSlot {
   pinched: boolean
   target: Element | null
   downAt: Pt
+  world?: Pt[]
   lastSeen: number
 }
 
-function mapCoord(nx: number, ny: number, w: number, h: number): Pt {
+function mapCoord(nx: number, ny: number, nz: number, w: number, h: number): Pt {
   const mx = (1 - nx - MARGIN) / (1 - 2 * MARGIN)
   const my = (ny - MARGIN) / (1 - 2 * MARGIN)
   return {
-    x: Math.max(0, Math.min(w, mx * w)),
-    y: Math.max(0, Math.min(h, my * h)),
+    x: mx * w,
+    y: my * h,
+    z: nz * w / (1 - 2 * MARGIN),
   }
 }
 
@@ -100,12 +103,15 @@ export function HandTracker({
     let cancelled = false
     let raf = 0
     let stream: MediaStream | null = null
-    let landmarker: { detectForVideo: (v: HTMLVideoElement, t: number) => { landmarks: { x: number; y: number; z: number }[][] }; close: () => void } | null = null
+    let landmarker: import('@mediapipe/tasks-vision').HandLandmarker | null = null
+    let mesh: Awaited<ReturnType<typeof import('./handMesh').createHandMesh>> | undefined
+    let meshRequested = false
 
     const slots: [HandSlot, HandSlot] = [
       { id: 101, pts: null, pinched: false, target: null, downAt: { x: 0, y: 0 }, lastSeen: 0 },
       { id: 102, pts: null, pinched: false, target: null, downAt: { x: 0, y: 0 }, lastSeen: 0 },
     ]
+    let lastFallback = false
     let lastHandCount = -1
     let lastVideoTime = -1
 
@@ -214,7 +220,7 @@ export function HandTracker({
           const res = landmarker.detectForVideo(v, now)
           const w = window.innerWidth
           const h = window.innerHeight
-          const rawHands = res.landmarks.map((lms) => lms.map((lm) => mapCoord(lm.x, lm.y, w, h)))
+          const rawHands = res.landmarks.map((lms) => lms.map((lm) => mapCoord(lm.x, lm.y, lm.z, w, h)))
 
           // Assign detected hands to slots minimizing centroid jump so dual-hand pinches stay stable
           const assigned: (Pt[] | null)[] = [null, null]
@@ -265,6 +271,7 @@ export function HandTracker({
               if (now - slot.lastSeen > 180) {
                 releaseSlot(slot)
                 slot.pts = null
+                slot.world = undefined
               }
               continue
             }
@@ -276,6 +283,7 @@ export function HandTracker({
               slot.pts = raw.map((p, k) => ({
                 x: slot.pts![k].x + (p.x - slot.pts![k].x) * SMOOTH,
                 y: slot.pts![k].y + (p.y - slot.pts![k].y) * SMOOTH,
+                z: (slot.pts![k].z ?? 0) + ((p.z ?? 0) - (slot.pts![k].z ?? 0)) * SMOOTH,
               }))
             }
             const pts = slot.pts
@@ -287,6 +295,9 @@ export function HandTracker({
             const cursor: Pt = nextPinched
               ? { x: (pts[4].x + pts[8].x) * 0.5, y: (pts[4].y + pts[8].y) * 0.5 }
               : { x: pts[8].x, y: pts[8].y }
+
+            cursor.x = Math.max(0, Math.min(w - 1, cursor.x))
+            cursor.y = Math.max(0, Math.min(h - 1, cursor.y))
 
             if (nextPinched && !slot.pinched) {
               slot.pinched = true
@@ -300,16 +311,36 @@ export function HandTracker({
               releaseSlot(slot, cursor)
             }
 
-            rendered.push({ pts, cursor, pinched: slot.pinched, pinchStrength: strength })
-          }
-
-          if (rendered.length !== lastHandCount) {
-            lastHandCount = rendered.length
-            statusCb.current({ state: 'active', hands: rendered.length })
+            const detection = rawHands.indexOf(raw)
+            const side = res.handedness[detection]?.[0]?.categoryName
+            const previous = slot.world
+            slot.world = res.worldLandmarks[detection]?.map((p, k) => {
+              const q = previous?.[k]
+              return q ? {
+                x: q.x + (p.x - q.x) * SMOOTH,
+                y: q.y + (p.y - q.y) * SMOOTH,
+                z: q.z! + (p.z - q.z!) * SMOOTH,
+              } : p
+            })
+            rendered.push({ slot: i, world: slot.world, side: side === 'Left' ? 'Left' : 'Right', pts, cursor, pinched: slot.pinched, pinchStrength: strength })
           }
 
           const ctx = c.getContext('2d')
-          if (ctx) renderHands(ctx, rendered, styleRef.current)
+          const style = styleRef.current
+          if (rendered.length && !meshRequested && style !== 'wireframe') {
+            meshRequested = true
+            void import('./handMesh').then(m => m.createHandMesh(style)).then(result => {
+              if (cancelled) result.dispose()
+              else mesh = result
+            }).catch(() => { /* Canvas hands remain available without WebGL. */ })
+          }
+          if (!ctx) return
+          const fallback = renderHands(ctx, rendered, style, mesh?.draw)
+          if (rendered.length !== lastHandCount || fallback !== lastFallback) {
+            lastHandCount = rendered.length
+            lastFallback = fallback
+            statusCb.current({ state: 'active', hands: rendered.length, illustratedFallback: fallback })
+          }
         }
         raf = requestAnimationFrame(loop)
       } catch (e) {
@@ -327,6 +358,7 @@ export function HandTracker({
 
     return () => {
       cancelled = true
+      mesh?.dispose()
       cancelAnimationFrame(raf)
       dialogObserver.disconnect()
       window.removeEventListener('resize', syncCanvasSize)
