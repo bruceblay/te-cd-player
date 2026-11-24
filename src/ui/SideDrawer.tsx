@@ -13,6 +13,7 @@ import type { HandStatus } from './HandTracker'
 
 export type DeckCount = 1 | 2
 export type ViewMode = '2d' | '3d'
+export type SurfaceMode = 'studio' | 'wood'
 
 export interface LayoutConfig {
   decks: DeckCount
@@ -23,8 +24,26 @@ export interface LayoutConfig {
 const DECKS_KEY = 'bc1.decks'
 const MIXER_KEY = 'bc1.mixer'
 const VIEW_KEY = 'bc1.view'
+const SURFACE_KEY = 'bc1.surface'
 const HAND_STYLE_KEY = 'bc1.handStyle'
 const HAND_STYLE_IDS = new Set<string>(HAND_STYLES.map((s) => s.id))
+
+export function readSurface(): SurfaceMode {
+  try {
+    const v = localStorage.getItem(SURFACE_KEY)
+    return v === 'studio' || v === 'wood' ? v : 'wood'
+  } catch {
+    return 'wood'
+  }
+}
+
+export function saveSurface(surface: SurfaceMode) {
+  try {
+    localStorage.setItem(SURFACE_KEY, surface)
+  } catch {
+    /* private mode: just not remembered */
+  }
+}
 
 export function readViewMode(): ViewMode {
   try {
@@ -91,6 +110,8 @@ export function SideDrawer({
   onClose,
   view,
   onView,
+  surface,
+  onSurface,
   layout,
   onLayout,
   handsOn,
@@ -114,6 +135,8 @@ export function SideDrawer({
   onClose: () => void
   view: ViewMode
   onView: (next: ViewMode) => void
+  surface: SurfaceMode
+  onSurface: (next: SurfaceMode) => void
   layout: LayoutConfig
   onLayout: (next: LayoutConfig) => void
   handsOn: boolean
@@ -138,7 +161,7 @@ export function SideDrawer({
     <>
       <button
         type="button"
-        className="menu-toggle light"
+        className={`menu-toggle ${surface === 'wood' ? 'dark' : 'light'}`}
         aria-label="open menu"
         aria-expanded={open}
         aria-controls="side-drawer"
@@ -180,6 +203,25 @@ export function SideDrawer({
                   onClick={() => onView(m)}
                 >
                   {m.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="drawer-row">
+            <span className="drawer-row-label">surface</span>
+            <div className="seg-control" role="radiogroup" aria-label="table surface">
+              {(['studio', 'wood'] as SurfaceMode[]).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  role="radio"
+                  aria-checked={surface === s}
+                  tabIndex={open ? 0 : -1}
+                  className={surface === s ? 'on' : ''}
+                  onClick={() => onSurface(s)}
+                >
+                  {s}
                 </button>
               ))}
             </div>
@@ -308,70 +350,72 @@ export function SideDrawer({
         <MidiSection open={open} onLearn={onClose} />
         <StreamFxSection mixer={mixer} open={open} />
 
-        {view === '2d' && (
-          <section className="drawer-section drawer-divider">
-            <div className="drawer-section-head">
-              <h3 className="drawer-label">desk</h3>
-              {propsOn && (
-                <div className="drawer-mini-actions">
-                  <button
-                    type="button"
-                    className="drawer-link"
-                    tabIndex={open ? 0 : -1}
-                    disabled={props.length === 0}
-                    onClick={onScatterProps}
-                  >
-                    scatter
-                  </button>
-                  <button
-                    type="button"
-                    className="drawer-link"
-                    tabIndex={open ? 0 : -1}
-                    disabled={props.length === 0}
-                    onClick={onClearProps}
-                  >
-                    clear
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <label className="drawer-toggle flush">
-              <span className="drawer-row-label">desk items</span>
-              <input
-                type="checkbox"
-                checked={propsOn}
-                tabIndex={open ? 0 : -1}
-                onChange={(e) => onPropsOn(e.target.checked)}
-              />
-              <span className="drawer-switch" aria-hidden />
-            </label>
-
+        <section className="drawer-section drawer-divider">
+          <div className="drawer-section-head">
+            <h3 className="drawer-label">desk</h3>
             {propsOn && (
-              <>
-                <div className="prop-picker">
-                  {PROP_CATALOG.map((p) => {
-                    const on = activeProps.has(p.id)
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        aria-pressed={on}
-                        tabIndex={open ? 0 : -1}
-                        className={`prop-chip ${on ? 'on' : ''}`}
-                        onClick={() => onToggleProp(p.id)}
-                      >
-                        <img src={p.image} alt="" aria-hidden />
-                        <span>{p.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-                <p className="drawer-note">drag to move<span className="fine-only"> · drag ↻ or scroll to rotate</span> · drop on a spinning CD</p>
-              </>
+              <div className="drawer-mini-actions">
+                <button
+                  type="button"
+                  className="drawer-link"
+                  tabIndex={open ? 0 : -1}
+                  disabled={props.length === 0}
+                  onClick={onScatterProps}
+                >
+                  scatter
+                </button>
+                <button
+                  type="button"
+                  className="drawer-link"
+                  tabIndex={open ? 0 : -1}
+                  disabled={props.length === 0}
+                  onClick={onClearProps}
+                >
+                  clear
+                </button>
+              </div>
             )}
-          </section>
-        )}
+          </div>
+
+          <label className="drawer-toggle flush">
+            <span className="drawer-row-label">desk items</span>
+            <input
+              type="checkbox"
+              checked={propsOn}
+              tabIndex={open ? 0 : -1}
+              onChange={(e) => onPropsOn(e.target.checked)}
+            />
+            <span className="drawer-switch" aria-hidden />
+          </label>
+
+          {propsOn && (
+            <>
+              <div className="prop-picker">
+                {PROP_CATALOG.map((p) => {
+                  const on = activeProps.has(p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      aria-pressed={on}
+                      tabIndex={open ? 0 : -1}
+                      className={`prop-chip ${on ? 'on' : ''}`}
+                      onClick={() => onToggleProp(p.id)}
+                    >
+                      <img src={p.image} alt="" aria-hidden />
+                      <span>{p.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="drawer-note">
+                drag to move
+                <span className="fine-only"> · {view === '3d' ? 'scroll to rotate' : 'drag ↻ or scroll to rotate'}</span>
+                {' · '}drop on a spinning CD
+              </p>
+            </>
+          )}
+        </section>
       </aside>
     </>
   )

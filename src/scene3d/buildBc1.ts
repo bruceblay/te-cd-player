@@ -57,6 +57,8 @@ export interface Bc1Rig {
   group: THREE.Group
   outputJackLocal: THREE.Vector3
   update: (s: DeckState, dt: number, now: number) => void
+  /** Exact clockwise rotation delta (radians) applied to the CD on the latest update frame. */
+  getSpinDelta: () => number
   setPressed: (keyId: string, down: boolean) => void
   dispose: () => void
 }
@@ -984,6 +986,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
   let activeBlurTex: THREE.CanvasTexture | null = null
   let spinAngle = 0
   let spinOmega = 0
+  let lastSpinDelta = 0
   let lastDisplayUpdate = 0
 
   const setPressed = (keyId: string, down: boolean) => {
@@ -1000,11 +1003,13 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     const accel = spinning ? 8.5 : 5.5
     spinOmega += (targetOmega - spinOmega) * Math.min(1, dt * accel)
     if (Math.abs(spinOmega) > 0.002) {
-      spinAngle -= spinOmega * dt
+      lastSpinDelta = spinOmega * dt
+      spinAngle -= lastSpinDelta
       platterSpin.rotation.y = spinAngle
       discGroup.rotation.y = spinAngle
     } else {
       spinOmega = 0
+      lastSpinDelta = 0
     }
     const blur = Math.min(1, Math.abs(spinOmega) / ((Math.PI * 2) / 0.32))
     discBlurMat.opacity = blur
@@ -1071,6 +1076,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     group,
     outputJackLocal,
     update,
+    getSpinDelta: () => lastSpinDelta,
     setPressed,
     dispose() {
       displays.dispose()

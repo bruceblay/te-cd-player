@@ -24,8 +24,12 @@ function createSoftboxTexture(intensity: number, tint = [255, 252, 245]): THREE.
  * Custom Teenage Engineering-style product photography studio environment:
  * feathered diffused softboxes + gentle mid-tone wrap so reflections sweep
  * smoothly across flat keycaps and aluminum without specular snapping.
+ * Accepts 'studio' (pale warm paper) or 'wood' (warm walnut workbench bounce).
  */
-export function createStudioEnvironment(renderer: THREE.WebGLRenderer): {
+export function createStudioEnvironment(
+  renderer: THREE.WebGLRenderer,
+  surface: 'studio' | 'wood' = 'studio',
+): {
   texture: THREE.Texture
   dispose: () => void
 } {
@@ -33,15 +37,15 @@ export function createStudioEnvironment(renderer: THREE.WebGLRenderer): {
   pmrem.compileEquirectangularShader()
 
   const envScene = new THREE.Scene()
-  envScene.background = new THREE.Color(0x5a5853)
+  envScene.background = new THREE.Color(surface === 'wood' ? 0x423a33 : 0x5a5853)
 
-  const warmSoftTex = createSoftboxTexture(1, [255, 251, 244])
+  const warmSoftTex = createSoftboxTexture(1, surface === 'wood' ? [255, 246, 234] : [255, 251, 244])
   const coolSoftTex = createSoftboxTexture(1, [232, 240, 255])
 
-  // Warm studio floor bounce
+  // Warm studio floor bounce (warm wood bounce reflects subtly in aluminum edges & CD underside)
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(90, 90).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ color: 0xbcb7ac }),
+    new THREE.MeshBasicMaterial({ color: surface === 'wood' ? 0x876f58 : 0xbcb7ac }),
   )
   floor.position.y = -12
   envScene.add(floor)
@@ -49,7 +53,7 @@ export function createStudioEnvironment(renderer: THREE.WebGLRenderer): {
   // Soft studio cyclorama wall
   const backWall = new THREE.Mesh(
     new THREE.PlaneGeometry(80, 38),
-    new THREE.MeshBasicMaterial({ color: 0x9c9992 }),
+    new THREE.MeshBasicMaterial({ color: surface === 'wood' ? 0x62564b : 0x9c9992 }),
   )
   backWall.position.set(0, 4, -28)
   envScene.add(backWall)
@@ -316,4 +320,149 @@ export function createStudioFloorTexture(): THREE.CanvasTexture {
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 8
   return tex
+}
+
+/**
+ * Loads the Knobs weathered walnut/oak tabletop photo and derives genuine PBR maps
+ * (albedo with mild corner-vignette normalization, Sobel grain-pore normalMap, and
+ * open-pore roughnessMap) so real 3D studio lighting rakes across every wood pore.
+ */
+export function createWoodTablePbrMaps(url: string): {
+  map: THREE.CanvasTexture
+  edgeMap: THREE.CanvasTexture
+  normalMap: THREE.DataTexture
+  roughnessMap: THREE.DataTexture
+  dispose: () => void
+} {
+  const W = 1280
+  const H = 720
+
+  const albedoCanvas = document.createElement('canvas')
+  albedoCanvas.width = W
+  albedoCanvas.height = H
+  const ctx = albedoCanvas.getContext('2d', { willReadFrequently: true })!
+  ctx.fillStyle = '#806b55'
+  ctx.fillRect(0, 0, W, H)
+
+  const map = new THREE.CanvasTexture(albedoCanvas)
+  map.colorSpace = THREE.SRGBColorSpace
+  map.anisotropy = 16
+
+  // Horizontal edge-grain slice of the same timber canvas for the thick table slab edges (avoids vertical squishing)
+  const edgeMap = new THREE.CanvasTexture(albedoCanvas)
+  edgeMap.colorSpace = THREE.SRGBColorSpace
+  edgeMap.anisotropy = 8
+  edgeMap.repeat.set(1, 0.08)
+  edgeMap.offset.set(0, 0.46)
+
+  const normalData = new Uint8Array(W * H * 4)
+  const roughData = new Uint8Array(W * H * 4)
+  for (let i = 0; i < W * H; i++) {
+    normalData[i * 4] = 128
+    normalData[i * 4 + 1] = 128
+    normalData[i * 4 + 2] = 255
+    normalData[i * 4 + 3] = 255
+    roughData[i * 4] = 225
+    roughData[i * 4 + 1] = 225
+    roughData[i * 4 + 2] = 225
+    roughData[i * 4 + 3] = 255
+  }
+
+  const normalMap = new THREE.DataTexture(normalData, W, H, THREE.RGBAFormat)
+  normalMap.anisotropy = 8
+  normalMap.needsUpdate = true
+
+  const roughnessMap = new THREE.DataTexture(roughData, W, H, THREE.RGBAFormat)
+  roughnessMap.anisotropy = 8
+  roughnessMap.needsUpdate = true
+
+  let disposed = false
+  const img = new Image()
+  img.onload = () => {
+    if (disposed) return
+    ctx.drawImage(img, 0, 0, W, H)
+
+    const imgData = ctx.getImageData(0, 0, W, H)
+    const px = imgData.data
+    const lum = new Float32Array(W * H)
+
+    // Gently counter residual corner darkening so real 3D directional lighting shapes the wood cleanly
+    const cx = W * 0.5
+    const cy = H * 0.5
+    for (let y = 0; y < H; y++) {
+      const ny = (y - cy) / cy
+      for (let x = 0; x < W; x++) {
+        const nx = (x - cx) / cx
+        const r2 = nx * nx + ny * ny
+        const lift = 1 + Math.min(0.22, r2 * 0.12)
+        const idx = (y * W + x) * 4
+        const r = Math.min(255, px[idx] * lift)
+        const g = Math.min(255, px[idx + 1] * lift)
+        const b = Math.min(255, px[idx + 2] * lift)
+        px[idx] = r
+        px[idx + 1] = g
+        px[idx + 2] = b
+        lum[y * W + x] = (r * 0.299 + g * 0.587 + b * 0.114) / 255
+      }
+    }
+    ctx.putImageData(imgData, 0, 0)
+    map.needsUpdate = true
+    edgeMap.needsUpdate = true
+
+    // Sobel gradient -> wood pore & grain micro-relief normalMap + open-pore roughnessMap
+    const at = (x: number, y: number) => {
+      const cx2 = x < 0 ? 0 : x >= W ? W - 1 : x
+      const cy2 = y < 0 ? 0 : y >= H ? H - 1 : y
+      return lum[cy2 * W + cx2]
+    }
+    const strength = 3.2
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const tl = at(x - 1, y - 1)
+        const t = at(x, y - 1)
+        const tr = at(x + 1, y - 1)
+        const l = at(x - 1, y)
+        const r = at(x + 1, y)
+        const bl = at(x - 1, y + 1)
+        const b = at(x, y + 1)
+        const br = at(x + 1, y + 1)
+
+        const dx = (tr + 2 * r + br - (tl + 2 * l + bl)) * strength
+        const dy = (bl + 2 * b + br - (tl + 2 * t + tr)) * strength
+        const inv = 1 / Math.hypot(dx, dy, 1)
+
+        const idx = (y * W + x) * 4
+        normalData[idx] = Math.round((-dx * inv * 0.5 + 0.5) * 255)
+        normalData[idx + 1] = Math.round((dy * inv * 0.5 + 0.5) * 255)
+        normalData[idx + 2] = Math.round((inv * 0.5 + 0.5) * 255)
+        normalData[idx + 3] = 255
+
+        // Darker pores & knots are dead-matte (~0.97); sanded lighter fibers have subtle dry satin (~0.76)
+        const lVal = lum[y * W + x]
+        const rough = Math.max(0.74, Math.min(0.98, 1.04 - lVal * 0.44))
+        const rByte = Math.round(rough * 255)
+        roughData[idx] = rByte
+        roughData[idx + 1] = rByte
+        roughData[idx + 2] = rByte
+        roughData[idx + 3] = 255
+      }
+    }
+    normalMap.needsUpdate = true
+    roughnessMap.needsUpdate = true
+  }
+  img.src = url
+
+  return {
+    map,
+    edgeMap,
+    normalMap,
+    roughnessMap,
+    dispose() {
+      disposed = true
+      map.dispose()
+      edgeMap.dispose()
+      normalMap.dispose()
+      roughnessMap.dispose()
+    },
+  }
 }

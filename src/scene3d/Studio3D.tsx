@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import knobsWoodUrl from '../assets/knobs-wood.jpg'
 import type { Deck } from '../engine/deck'
 import type { Mixer } from '../engine/mixer'
 import { capturePointer } from '../ui/controls'
 import { BC1_D, BC1_W, buildBc1, type Bc1Rig } from './buildBc1'
+import { buildProp3D, type PropRig3D } from './buildProps3D'
 import { SK_D, SK_W, buildSidekick, type SidekickRig } from './buildSidekick'
-import { createStudioEnvironment, createStudioFloorTexture } from './materials'
-import type { ControlAction } from './types'
+import type { PlacedProp, PropId } from '../ui/DeskProps'
+import {
+  createStudioEnvironment,
+  createStudioFloorTexture,
+  createWoodTablePbrMaps,
+} from './materials'
+import { createRoundedTopPlane, type ControlAction } from './types'
 import { controlIdFor3d, midiLearn } from '../engine/midiLearn'
 
 export type CameraPreset = 'desk' | 'low' | 'top' | 'sidekick'
@@ -158,6 +166,10 @@ export function Studio3D({
   deckCount,
   mixerOn,
   cables,
+  surface = 'wood',
+  propsOn = false,
+  deskProps = [],
+  onUpdateProps,
   onSelectDeck,
   onOpenLid,
 }: {
@@ -166,14 +178,42 @@ export function Studio3D({
   deckCount: 1 | 2
   mixerOn: boolean
   cables: StudioPatch[]
+  surface?: 'studio' | 'wood'
+  propsOn?: boolean
+  deskProps?: PlacedProp[]
+  onUpdateProps?: (updater: (cur: PlacedProp[]) => PlacedProp[]) => void
   onSelectDeck: (index: number) => void
   onOpenLid: (index: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [preset, setPreset] = useState<CameraPreset>('desk')
 
-  const propsRef = useRef({ decks, mixer, deckCount, mixerOn, cables, onSelectDeck, onOpenLid })
-  propsRef.current = { decks, mixer, deckCount, mixerOn, cables, onSelectDeck, onOpenLid }
+  const propsRef = useRef({
+    decks,
+    mixer,
+    deckCount,
+    mixerOn,
+    cables,
+    surface,
+    propsOn,
+    deskProps,
+    onUpdateProps,
+    onSelectDeck,
+    onOpenLid,
+  })
+  propsRef.current = {
+    decks,
+    mixer,
+    deckCount,
+    mixerOn,
+    cables,
+    surface,
+    propsOn,
+    deskProps,
+    onUpdateProps,
+    onSelectDeck,
+    onOpenLid,
+  }
 
   const cameraGoalRef = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null)
   const aspectRef = useRef(16 / 9)
@@ -228,10 +268,9 @@ export function Studio3D({
     renderer.domElement.style.touchAction = 'none'
     host.appendChild(renderer.domElement)
 
-    // Custom softbox + negative-fill photography studio environment
-    const studioEnv = createStudioEnvironment(renderer)
-    scene.environment = studioEnv.texture
-    scene.environmentIntensity = 0.88
+    // Dual studio environments (pale studio paper vs warm Knobs walnut workbench bounce)
+    const studioEnv = createStudioEnvironment(renderer, 'studio')
+    const woodEnv = createStudioEnvironment(renderer, 'wood')
 
     // Sculpted directional studio lighting (warm softbox key + cool subtle rim)
     const hemi = new THREE.HemisphereLight(0xfdfbf7, 0xbdb7ab, 0.36)
@@ -242,11 +281,11 @@ export function Studio3D({
     keyLight.castShadow = true
     keyLight.shadow.mapSize.set(4096, 4096)
     keyLight.shadow.camera.near = 8
-    keyLight.shadow.camera.far = 96
-    keyLight.shadow.camera.left = -30
-    keyLight.shadow.camera.right = 30
-    keyLight.shadow.camera.top = 22
-    keyLight.shadow.camera.bottom = -22
+    keyLight.shadow.camera.far = 112
+    keyLight.shadow.camera.left = -44
+    keyLight.shadow.camera.right = 44
+    keyLight.shadow.camera.top = 30
+    keyLight.shadow.camera.bottom = -30
     keyLight.shadow.bias = -0.00045
     keyLight.shadow.normalBias = 0.028
     keyLight.shadow.radius = 3.0
@@ -256,9 +295,9 @@ export function Studio3D({
     fillLight.position.set(26, 16, -18)
     scene.add(fillLight)
 
-    // Seamless studio cyclorama tabletop with subtle overhead softbox pool + shadows
+    // 1. Seamless pale studio cyclorama floor & far surround ring
     const floorTex = createStudioFloorTexture()
-    const floor = new THREE.Mesh(
+    const studioFloor = new THREE.Mesh(
       new THREE.PlaneGeometry(220, 220).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({
         map: floorTex,
@@ -267,15 +306,100 @@ export function Studio3D({
         envMapIntensity: 0.18,
       }),
     )
-    floor.receiveShadow = true
-    scene.add(floor)
-    // matte surround in the floor's edge tone, so zoomed-out views never show its border
+    studioFloor.receiveShadow = true
+    scene.add(studioFloor)
+
+    // matte surround in the floor's edge tone, so zoomed-out studio views never show its border
     const surround = new THREE.Mesh(
       new THREE.RingGeometry(150, 900, 4, 1).rotateX(-Math.PI / 2).rotateY(Math.PI / 4),
       new THREE.MeshStandardMaterial({ color: '#d8d4cb', roughness: 0.92, metalness: 0, envMapIntensity: 0.18 }),
     )
     surround.position.y = -0.02
     scene.add(surround)
+
+    // 2. Physical 3D solid-timber Knobs studio workbench table (top flush at y = 0, exact 16:9 grain aspect)
+    const woodMaps = createWoodTablePbrMaps(knobsWoodUrl)
+    const woodTableGroup = new THREE.Group()
+    woodTableGroup.name = 'knobs-wood-table'
+
+    const TABLE_W = 128
+    const TABLE_D = 72
+    const TABLE_H = 3.6
+
+    // Thick solid oiled walnut/oak timber slab body with natural un-squished horizontal edge grain
+    const slabEdgeMat = new THREE.MeshStandardMaterial({
+      color: 0xa4927f,
+      map: woodMaps.edgeMap,
+      roughness: 0.84,
+      metalness: 0.0,
+      envMapIntensity: 0.16,
+    })
+    const slabBody = new THREE.Mesh(
+      new RoundedBoxGeometry(TABLE_W, TABLE_H, TABLE_D, 4, 0.24),
+      slabEdgeMat,
+    )
+    slabBody.position.set(0, -TABLE_H / 2 - 0.015, 0)
+    slabBody.castShadow = true
+    slabBody.receiveShadow = true
+    woodTableGroup.add(slabBody)
+
+    // Real PBR top wood grain surface (derived normal + roughness maps catch raking studio light)
+    const slabTopMat = new THREE.MeshStandardMaterial({
+      color: 0xcdc0b2,
+      map: woodMaps.map,
+      normalMap: woodMaps.normalMap,
+      normalScale: new THREE.Vector2(0.55, 0.55),
+      roughnessMap: woodMaps.roughnessMap,
+      roughness: 1.0,
+      metalness: 0.0,
+      envMapIntensity: 0.2,
+    })
+    const slabTop = new THREE.Mesh(
+      createRoundedTopPlane(TABLE_W - 0.34, TABLE_D - 0.34, 0.22, 8),
+      slabTopMat,
+    )
+    slabTop.position.set(0, 0.001, 0)
+    slabTop.receiveShadow = true
+    woodTableGroup.add(slabTop)
+
+    // Recessed matte powder-coated black steel studio desk apron & legs beneath the timber slab
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x191817, roughness: 0.68, metalness: 0.35 })
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(TABLE_W - 12, 2.4, TABLE_D - 12), steelMat)
+    apron.position.set(0, -TABLE_H - 1.2, 0)
+    woodTableGroup.add(apron)
+
+    const legGeo = new THREE.BoxGeometry(2.0, 28, 2.0)
+    for (const lx of [-(TABLE_W / 2 - 8), TABLE_W / 2 - 8]) {
+      for (const lz of [-(TABLE_D / 2 - 8), TABLE_D / 2 - 8]) {
+        const leg = new THREE.Mesh(legGeo, steelMat)
+        leg.position.set(lx, -TABLE_H - 14, lz)
+        woodTableGroup.add(leg)
+      }
+    }
+    scene.add(woodTableGroup)
+
+    // Apply active surface theme (studio vs wood) dynamically without tearing down WebGL
+    let appliedSurface: 'studio' | 'wood' | null = null
+    const applySurface = (mode: 'studio' | 'wood') => {
+      if (mode === appliedSurface) return
+      appliedSurface = mode
+      const isWood = mode === 'wood'
+      studioFloor.visible = !isWood
+      surround.visible = !isWood
+      woodTableGroup.visible = isWood
+      scene.environment = isWood ? woodEnv.texture : studioEnv.texture
+      scene.environmentIntensity = isWood ? 0.92 : 0.88
+      const bgHex = isWood ? 0x1e1a16 : 0xdfdcd4
+      scene.background = new THREE.Color(bgHex)
+      scene.fog = new THREE.Fog(bgHex, isWood ? 88 : 95, isWood ? 195 : 220)
+      hemi.color.setHex(isWood ? 0xfff8ee : 0xfdfbf7)
+      hemi.groundColor.setHex(isWood ? 0x735d49 : 0xbdb7ab)
+      hemi.intensity = isWood ? 0.42 : 0.36
+      keyLight.color.setHex(isWood ? 0xfff4e2 : 0xfffaf0)
+      keyLight.intensity = isWood ? 1.65 : 1.55
+      fillLight.intensity = isWood ? 0.46 : 0.42
+    }
+    applySurface(propsRef.current.surface)
 
     // OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -386,12 +510,101 @@ export function Studio3D({
       }
     }
 
+    /* ---------------- 3D Desk Props (real-world scale on the walnut table) ---------------- */
+
+    const propsGroup = new THREE.Group()
+    propsGroup.name = 'desk-props-3d'
+    scene.add(propsGroup)
+
+    const DISC_CX_LOCAL = (236.5 - 185) * (12 / 246) // +2.5122
+    const DISC_CZ_LOCAL = (177 - 255.5) * (12 / 246) // -3.8293
+    const DISC_R_WORLD = 6.0
+    const DISC_TOP_Y = 2.345
+
+    interface PropLive3D {
+      rig: PropRig3D
+      x: number
+      z: number
+      rot: number
+      liftY: number
+      curY: number
+      dirty: boolean
+    }
+    const propRigs = new Map<PropId, PropLive3D>()
+
+    const surfaceYAt = (x: number, z: number): number => {
+      const { decks: curDecks, deckCount: dc, mixerOn: mOn } = propsRef.current
+      for (let i = 0; i < dc; i++) {
+        const deckX = bc1Rigs[i].group.position.x
+        const s = curDecks[i].getState()
+        if (s.disc) {
+          const cx = deckX + DISC_CX_LOCAL
+          const cz = DISC_CZ_LOCAL
+          if (Math.hypot(x - cx, z - cz) <= DISC_R_WORLD * 0.96) return DISC_TOP_Y
+        }
+        if (Math.abs(x - deckX) <= BC1_W * 0.5 && Math.abs(z) <= BC1_D * 0.5) return 1.715
+      }
+      if (mOn && sidekickRig && sidekickRig.group.visible) {
+        const sx = sidekickRig.group.position.x
+        const sz = sidekickRig.group.position.z
+        if (Math.abs(x - sx) <= SK_W * 0.5 && Math.abs(z - sz) <= SK_D * 0.5) {
+          return z - sz < -4.2 ? 1.96 : 1.72
+        }
+      }
+      return 0
+    }
+
+    const rollDieFace = (id: PropId, avoid: number): number => {
+      const max = id === 'die' ? 6 : 20
+      let v = 1 + Math.floor(Math.random() * max)
+      if (v === avoid) v = (v % max) + 1
+      return v
+    }
+
+    const persistProp = (id: PropId, patch: Partial<Pick<PlacedProp, 'x3d' | 'z3d' | 'rot' | 'face'>>) => {
+      propsRef.current.onUpdateProps?.((cur) =>
+        cur.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      )
+    }
+
+    const clampTable = (x: number, z: number): [number, number] => [
+      Math.max(-58, Math.min(58, x)),
+      Math.max(-32, Math.min(32, z)),
+    ]
+
+    const launchDieRoll3D = (id: PropId, onDrop: boolean) => {
+      const live = propRigs.get(id)
+      if (!live || !live.rig.isDie) return
+      const nextFace = rollDieFace(id, live.rig.face)
+      const dir = Math.random() > 0.5 ? 1 : -1
+      const rotDelta = onDrop
+        ? dir * (18 + Math.round(Math.random() * 44))
+        : dir * (35 + Math.round(Math.random() * 110))
+      live.rot += rotDelta
+      live.rig.root.rotation.y = THREE.MathUtils.degToRad(-live.rot)
+      live.rig.roll(nextFace, onDrop, (dx, dz) => {
+        const [nx, nz] = clampTable(live.x + dx, live.z + dz)
+        live.x = nx
+        live.z = nz
+        live.curY = surfaceYAt(nx, nz)
+        live.rig.root.position.set(nx, live.curY, nz)
+        live.dirty = true
+      })
+      persistProp(id, { x3d: live.x, z3d: live.z, rot: live.rot, face: nextFace })
+    }
+
     /* ---------------- Unified Raycast Pointer Interaction ---------------- */
 
     const raycaster = new THREE.Raycaster()
     const ndc = new THREE.Vector2()
+    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+    const planeHit = new THREE.Vector3()
 
-    const pickControl = (clientX: number, clientY: number) => {
+    type PickResult =
+      | { kind: 'control'; ctrl: ControlAction; hit: THREE.Intersection }
+      | { kind: 'prop'; id: PropId; hit: THREE.Intersection }
+
+    const pickScene = (clientX: number, clientY: number): PickResult | null => {
       const rect = renderer.domElement.getBoundingClientRect()
       ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1
       ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1
@@ -399,12 +612,24 @@ export function Studio3D({
       const targets: THREE.Object3D[] = [bc1Rigs[0].group]
       if (bc1Rigs[1].group.visible) targets.push(bc1Rigs[1].group)
       if (sidekickRig && sidekickRig.group.visible) targets.push(sidekickRig.group)
+      if (propsRef.current.propsOn && propsGroup.visible) targets.push(propsGroup)
       const hits = raycaster.intersectObjects(targets, true)
       for (const hit of hits) {
+        const propId = hit.object.userData?.propId as PropId | undefined
+        if (propId) return { kind: 'prop', id: propId, hit }
         const ctrl = hit.object.userData?.control as ControlAction | undefined
-        if (ctrl) return { ctrl, hit }
+        if (ctrl) return { kind: 'control', ctrl, hit }
       }
       return null
+    }
+
+    const intersectDragPlane = (clientX: number, clientY: number, y: number): THREE.Vector3 | null => {
+      const rect = renderer.domElement.getBoundingClientRect()
+      ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1
+      ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1
+      raycaster.setFromCamera(ndc, camera)
+      dragPlane.constant = -y
+      return raycaster.ray.intersectPlane(dragPlane, planeHit)
     }
 
     type DragState =
@@ -413,6 +638,16 @@ export function Studio3D({
       | { kind: 'fader'; action: Extract<ControlAction, { kind: 'fader' }>; startY: number; startVal: number }
       | { kind: 'jog'; action: Extract<ControlAction, { kind: 'jog' }>; startX: number }
       | { kind: 'pad'; action: Extract<ControlAction, { kind: 'pad' }>; startX: number; startY: number; lock: boolean }
+      | {
+          kind: 'prop'
+          id: PropId
+          startClientX: number
+          startClientY: number
+          planeY: number
+          offsetX: number
+          offsetZ: number
+          moved: boolean
+        }
 
     let activeDrag: DragState | null = null
     let lastTapKnob: { action: ControlAction; time: number } | null = null
@@ -426,13 +661,39 @@ export function Studio3D({
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 && e.button !== 2) return
-      const picked = pickControl(e.clientX, e.clientY)
+      const picked = pickScene(e.clientX, e.clientY)
       if (!picked) {
         // Prevent hand-tracking pinches from accidentally orbiting or panning the 3D camera
         if (isHandPointer(e)) {
           e.stopPropagation()
           e.preventDefault()
         }
+        return
+      }
+
+      if (picked.kind === 'prop') {
+        if (e.button !== 0) return
+        if (midiLearn.getState().learning) return
+        const live = propRigs.get(picked.id)
+        if (!live) return
+        controls.enabled = false
+        capturePointer(renderer.domElement, e.pointerId)
+        e.stopPropagation()
+        const planeY = live.curY
+        const hitPt = intersectDragPlane(e.clientX, e.clientY, planeY)
+        const offsetX = hitPt ? live.x - hitPt.x : 0
+        const offsetZ = hitPt ? live.z - hitPt.z : 0
+        activeDrag = {
+          kind: 'prop',
+          id: picked.id,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          planeY,
+          offsetX,
+          offsetZ,
+          moved: false,
+        }
+        renderer.domElement.style.cursor = 'grabbing'
         return
       }
 
@@ -488,18 +749,45 @@ export function Studio3D({
 
     const onPointerMove = (e: PointerEvent) => {
       if (!activeDrag) {
-        const picked = pickControl(e.clientX, e.clientY)
-        const blocked = picked?.ctrl.kind === 'knob' ? picked.ctrl.disabled?.() : null
-        renderer.domElement.title = blocked ?? ''
+        const picked = pickScene(e.clientX, e.clientY)
         if (!picked) {
+          renderer.domElement.title = ''
           renderer.domElement.style.cursor = 'grab'
-        } else if (blocked) {
+          return
+        }
+        if (picked.kind === 'prop') {
+          const isDie = picked.id === 'die' || picked.id === 'd20'
+          renderer.domElement.title = isDie
+            ? 'click to roll · drag to move · scroll to rotate'
+            : 'drag to move · scroll to rotate'
+          renderer.domElement.style.cursor = 'grab'
+          return
+        }
+        const blocked = picked.ctrl.kind === 'knob' ? picked.ctrl.disabled?.() : null
+        renderer.domElement.title = blocked ?? ''
+        if (blocked) {
           renderer.domElement.style.cursor = 'not-allowed'
         } else {
           const k = picked.ctrl.kind
           renderer.domElement.style.cursor =
             k === 'knob' || k === 'fader' ? 'ns-resize' : k === 'jog' ? 'ew-resize' : k === 'pad' ? 'crosshair' : 'pointer'
         }
+        return
+      }
+
+      if (activeDrag.kind === 'prop') {
+        if (!activeDrag.moved && Math.hypot(e.clientX - activeDrag.startClientX, e.clientY - activeDrag.startClientY) > 4) {
+          activeDrag.moved = true
+        }
+        if (!activeDrag.moved) return
+        const live = propRigs.get(activeDrag.id)
+        if (!live) return
+        const hitPt = intersectDragPlane(e.clientX, e.clientY, activeDrag.planeY)
+        if (!hitPt) return
+        const [nx, nz] = clampTable(hitPt.x + activeDrag.offsetX, hitPt.z + activeDrag.offsetZ)
+        live.x = nx
+        live.z = nz
+        live.curY = surfaceYAt(nx, nz)
         return
       }
 
@@ -528,7 +816,22 @@ export function Studio3D({
 
     const endDrag = (e?: PointerEvent) => {
       if (activeDrag) {
-        if (activeDrag.kind === 'button') {
+        if (activeDrag.kind === 'prop') {
+          const live = propRigs.get(activeDrag.id)
+          if (live) {
+            if (!activeDrag.moved) {
+              if (live.rig.isDie) launchDieRoll3D(activeDrag.id, false)
+            } else if (live.rig.isDie) {
+              launchDieRoll3D(activeDrag.id, true)
+            } else {
+              const nudge = Math.round((Math.random() - 0.5) * 12)
+              live.rot += nudge
+              live.rig.settle()
+              persistProp(activeDrag.id, { x3d: live.x, z3d: live.z, rot: live.rot })
+            }
+          }
+          renderer.domElement.style.cursor = 'grab'
+        } else if (activeDrag.kind === 'button') {
           setPressedVisual(activeDrag.action.keyId, activeDrag.deckIndex, false)
           activeDrag.action.onUp?.()
         } else if (activeDrag.kind === 'knob') {
@@ -553,8 +856,20 @@ export function Studio3D({
     }
 
     const onWheel = (e: WheelEvent) => {
-      const picked = pickControl(e.clientX, e.clientY)
-      if (picked && picked.ctrl.kind === 'oled') {
+      const picked = pickScene(e.clientX, e.clientY)
+      if (!picked) return
+      if (picked.kind === 'prop') {
+        e.preventDefault()
+        e.stopPropagation()
+        const live = propRigs.get(picked.id)
+        if (!live) return
+        const step = e.shiftKey ? 5 : 15
+        live.rot += e.deltaY > 0 ? step : -step
+        live.rig.root.rotation.y = THREE.MathUtils.degToRad(-live.rot)
+        persistProp(picked.id, { rot: live.rot })
+        return
+      }
+      if (picked.ctrl.kind === 'oled') {
         e.preventDefault()
         e.stopPropagation()
         picked.ctrl.onWheel(e.deltaY)
@@ -562,8 +877,8 @@ export function Studio3D({
     }
 
     const onContextMenu = (e: MouseEvent) => {
-      const picked = pickControl(e.clientX, e.clientY)
-      if (picked && picked.ctrl.kind === 'pad') e.preventDefault()
+      const picked = pickScene(e.clientX, e.clientY)
+      if (picked && picked.kind === 'control' && picked.ctrl.kind === 'pad') e.preventDefault()
     }
 
     const dom = renderer.domElement
@@ -608,6 +923,127 @@ export function Studio3D({
     })
     ro.observe(host)
 
+    let lastDeskPropsRef: PlacedProp[] | null = null
+    let cdFlushAccum = 0
+
+    const updateProps3D = (dt: number) => {
+      const { propsOn: pOn, deskProps: items, decks: curDecks, deckCount: dc } = propsRef.current
+      propsGroup.visible = pOn
+      if (!pOn) return
+
+      const propsChanged = items !== lastDeskPropsRef
+      if (propsChanged) {
+        lastDeskPropsRef = items
+        const keepIds = new Set(items.map((p) => p.id))
+        for (const [id, live] of propRigs) {
+          if (!keepIds.has(id)) {
+            propsGroup.remove(live.rig.root)
+            live.rig.dispose()
+            propRigs.delete(id)
+          }
+        }
+        for (const p of items) {
+          let live = propRigs.get(p.id)
+          const tx = p.x3d ?? 0
+          const tz = p.z3d ?? 16
+          if (!live) {
+            const rig = buildProp3D(p.id, p.face ?? 1)
+            const curY = surfaceYAt(tx, tz)
+            rig.root.position.set(tx, curY, tz)
+            rig.root.rotation.y = THREE.MathUtils.degToRad(-p.rot)
+            propsGroup.add(rig.root)
+            live = { rig, x: tx, z: tz, rot: p.rot, liftY: 0, curY, dirty: false }
+            propRigs.set(p.id, live)
+          } else {
+            const isDragging = activeDrag?.kind === 'prop' && activeDrag.id === p.id
+            if (!isDragging && !live.dirty) {
+              live.x = tx
+              live.z = tz
+              live.rot = p.rot
+              live.rig.setFace(p.face ?? 1)
+            }
+          }
+        }
+      }
+
+      // Active spinning CDs for the 3D disc-riding Easter egg — locked 1:1 to live CD motor inertia!
+      const spinners: { cx: number; cz: number; dRad: number }[] = []
+      for (let i = 0; i < dc; i++) {
+        const s = curDecks[i].getState()
+        const dRad = bc1Rigs[i].getSpinDelta()
+        if (s.disc && Math.abs(dRad) > 1e-6) {
+          spinners.push({
+            cx: bc1Rigs[i].group.position.x + DISC_CX_LOCAL,
+            cz: DISC_CZ_LOCAL,
+            dRad,
+          })
+        }
+      }
+
+      let anyAnimatingOrSpinning = false
+      let anyDirty = false
+      const liftLerp = Math.min(1, dt * 18)
+
+      for (const [id, live] of propRigs) {
+        const draggingThis = activeDrag?.kind === 'prop' && activeDrag.id === id && activeDrag.moved
+        const animActive = live.rig.update(dt)
+        if (animActive) anyAnimatingOrSpinning = true
+
+        // Ride spinning CD rigidly in 3D (matches discGroup.rotation.y -= spinOmega * dt)
+        if (!draggingThis && spinners.length) {
+          for (const sp of spinners) {
+            const dx = live.x - sp.cx
+            const dz = live.z - sp.cz
+            if (Math.hypot(dx, dz) <= DISC_R_WORLD * 0.96) {
+              const cos = Math.cos(sp.dRad)
+              const sin = Math.sin(sp.dRad)
+              live.x = sp.cx + dx * cos - dz * sin
+              live.z = sp.cz + dx * sin + dz * cos
+              live.rot += THREE.MathUtils.radToDeg(sp.dRad)
+              live.dirty = true
+              anyAnimatingOrSpinning = true
+              break
+            }
+          }
+        }
+
+        const targetLift = draggingThis ? 1.55 : 0
+        live.liftY += (targetLift - live.liftY) * liftLerp
+        const targetTilt = draggingThis ? 0.08 : 0
+        live.rig.body.rotation.x += (targetTilt - live.rig.body.rotation.x) * liftLerp
+
+        const baseY = surfaceYAt(live.x, live.z)
+        live.curY += (baseY - live.curY) * Math.min(1, dt * 22)
+        live.rig.root.position.set(live.x, live.curY + live.liftY, live.z)
+        live.rig.root.rotation.y = THREE.MathUtils.degToRad(-live.rot)
+
+        if (live.dirty) anyDirty = true
+      }
+
+      // Periodically flush dirty positions (after roll skids or CD riding stops) back to persisted state
+      if (anyDirty && !anyAnimatingOrSpinning) {
+        cdFlushAccum += dt
+        if (cdFlushAccum > 0.12) {
+          cdFlushAccum = 0
+          const updates = new Map<PropId, { x3d: number; z3d: number; rot: number }>()
+          for (const [id, live] of propRigs) {
+            if (live.dirty) {
+              live.dirty = false
+              updates.set(id, { x3d: live.x, z3d: live.z, rot: live.rot })
+            }
+          }
+          if (updates.size) {
+            propsRef.current.onUpdateProps?.((cur) =>
+              cur.map((p) => {
+                const u = updates.get(p.id)
+                return u ? { ...p, ...u } : p
+              }),
+            )
+          }
+        }
+      }
+    }
+
     let raf = 0
     let lastTime = performance.now()
 
@@ -616,7 +1052,8 @@ export function Studio3D({
       const dt = Math.min(0.05, (now - lastTime) / 1000)
       lastTime = now
 
-      const { decks: curDecks, mixer: curMixer, deckCount: dc, mixerOn: mOn } = propsRef.current
+      const { decks: curDecks, mixer: curMixer, deckCount: dc, mixerOn: mOn, surface: curSurface } = propsRef.current
+      applySurface(curSurface)
 
       const lp = layoutPositions(dc, mOn)
       const posLerp = Math.min(1, dt * 10)
@@ -642,6 +1079,7 @@ export function Studio3D({
       if (dc === 2) bc1Rigs[1].update(curDecks[1].getState(), dt, now)
 
       updateCables()
+      updateProps3D(dt)
 
       if (cameraGoalRef.current) {
         const camLerp = Math.min(1, dt * 6.5)
@@ -675,10 +1113,17 @@ export function Studio3D({
       bc1Rigs[0].dispose()
       bc1Rigs[1].dispose()
       sidekickRig?.dispose()
+      for (const live of propRigs.values()) live.rig.dispose()
+      propRigs.clear()
       cableVisuals.forEach((cv) => cv.tube?.geometry.dispose())
       cableMat.dispose()
       floorTex.dispose()
+      woodMaps.dispose()
+      slabEdgeMat.dispose()
+      slabTopMat.dispose()
+      steelMat.dispose()
       studioEnv.dispose()
+      woodEnv.dispose()
       renderer.dispose()
       dom.remove()
     }
@@ -698,7 +1143,7 @@ export function Studio3D({
       ]
 
   return (
-    <div className="studio3d">
+    <div className={`studio3d ${surface === 'wood' ? 'is-wood' : ''}`}>
       <div className="studio3d-canvas" ref={hostRef} />
       <div className="cam-bar" role="group" aria-label="camera angles">
         {presets.map((p) => (

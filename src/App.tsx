@@ -7,21 +7,26 @@ import { Mixer, type MixerState } from './engine/mixer'
 import { Sidekick } from './ui/Sidekick'
 import { Cable, type End } from './ui/Cable'
 import { Studio3D } from './scene3d/Studio3D'
+import knobsWoodUrl from './assets/knobs-wood.jpg'
 import {
   SideDrawer,
   readHandStyle,
   readLayout,
+  readSurface,
   readViewMode,
   saveHandStyle,
   saveLayout,
+  saveSurface,
   saveViewMode,
   type LayoutConfig,
+  type SurfaceMode,
   type ViewMode,
 } from './ui/SideDrawer'
 import {
   DeskProps,
   clearGearOverlap,
   createInitialProps,
+  ensureProps3D,
   readPropsEnabled,
   readSavedProps,
   saveProps,
@@ -140,6 +145,10 @@ export default function App() {
   useEffect(() => {
     saveViewMode(view)
   }, [view])
+  const [surface, setSurface] = useState<SurfaceMode>(readSurface)
+  useEffect(() => {
+    saveSurface(surface)
+  }, [surface])
   const [handsOn, setHandsOn] = useState(false)
   const [handStyle, setHandStyle] = useState<HandStyle>(readHandStyle)
   const [handStatus, setHandStatus] = useState<HandStatus>({ state: 'off', hands: 0 })
@@ -179,12 +188,18 @@ export default function App() {
   const updateProps = (updater: (cur: PlacedProp[]) => PlacedProp[]) => {
     setProps((cur) => updater(cur ?? []))
   }
-  const toggleProp = (id: PropId) => {
-    updateProps((cur) => (cur.some((p) => p.id === id) ? cur.filter((p) => p.id !== id) : [...cur, spawnProp(id, cur)]))
-  }
   const [layout, setLayout] = useState<LayoutConfig>(readLayout)
   const deckCount = layout.decks
   const mixerOn = deckCount === 2 || layout.sidekick
+  const toggleProp = (id: PropId) => {
+    updateProps((cur) =>
+      cur.some((p) => p.id === id) ? cur.filter((p) => p.id !== id) : [...cur, spawnProp(id, cur, deckCount, mixerOn)],
+    )
+  }
+  // Ensure existing saved 2D props receive clean collision-free 3D tabletop coordinates
+  useEffect(() => {
+    setProps((cur) => (cur ? ensureProps3D(cur, deckCount, mixerOn) : cur))
+  }, [view, deckCount, mixerOn])
   const ms = useSyncExternalStore<MixerState | null>(
     mixerOn ? getMixer().subscribe : noSub,
     mixerOn ? getMixer().getState : noState,
@@ -419,8 +434,20 @@ export default function App() {
     if (!OG) midiLearn.restore()
   }, [])
 
+  const show2dWood = !OG && view === '2d' && surface === 'wood'
+
   return (
-    <main className={`page ${view === '3d' ? 'page-3d' : ''}`}>
+    <main
+      className={`page ${view === '3d' ? 'page-3d' : ''} ${show2dWood ? 'has-surface' : ''}`.trim()}
+      data-surface={OG ? 'studio' : surface}
+    >
+      {show2dWood && (
+        <div
+          className="surface-bg"
+          style={{ backgroundImage: `url(${knobsWoodUrl})` }}
+          aria-hidden
+        />
+      )}
       {!OG && <MidiLearnLayer />}
       {!OG && <SideDrawer
         open={drawerOpen}
@@ -428,6 +455,8 @@ export default function App() {
         onClose={() => setDrawerOpen(false)}
         view={view}
         onView={setView}
+        surface={surface}
+        onSurface={setSurface}
         layout={layout}
         onLayout={updateLayout}
         handsOn={handsOn}
@@ -439,7 +468,7 @@ export default function App() {
         onPropsOn={setPropsOn}
         props={props ?? []}
         onToggleProp={toggleProp}
-        onScatterProps={() => updateProps((cur) => scatterProps(cur))}
+        onScatterProps={() => updateProps((cur) => scatterProps(cur, deckCount, mixerOn))}
         onClearProps={() => setProps([])}
         spotifyIn={spotifyIn}
         spotifyProfile={spotifyProfile}
@@ -458,6 +487,10 @@ export default function App() {
           deckCount={deckCount}
           mixerOn={mixerOn}
           cables={cables}
+          surface={surface}
+          propsOn={propsOn}
+          deskProps={props ?? []}
+          onUpdateProps={updateProps}
           onSelectDeck={(i) => {
             active.current = i
           }}

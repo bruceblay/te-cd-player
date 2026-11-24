@@ -77,6 +77,8 @@ const COMP_TYPES: CompType[] = ['glue', 'punch', 'limit']
 const EQ_STYLES: EqStyle[] = ['dj', 'studio', 'param']
 
 const dbToLin = (db: number) => Math.pow(10, db / 20)
+/** Console/DJ taper: 80% travel is 0 dB unity (1.0), with ~+3.9 dB headroom up to 100%. */
+const faderGain = (v: number) => (v / 0.8) ** 2
 
 const channel = (): ChannelState => ({
   gain: 0,
@@ -455,16 +457,16 @@ export class Mixer {
     st.setEq(this.s.eqStyle, ch.eq)
     st.setComp(ch.comp, ch.compType)
     st.panner.pan.setTargetAtTime(ch.pan, t, 0.02)
-    st.fader.gain.setTargetAtTime(ch.fader * ch.fader, t, 0.02)
+    st.fader.gain.setTargetAtTime(faderGain(ch.fader), t, 0.02)
     st.cueSend.gain.setTargetAtTime(ch.cue ? 1 : 0, t, 0.01)
     st.fx.select(ch.fx)
     this.applyStreamGain()
   }
   private applyMaster() {
     const t = this.ctx.currentTime
-    this.masterGain.gain.setTargetAtTime(this.s.power ? this.s.master * this.s.master : 0, t, 0.02)
+    this.masterGain.gain.setTargetAtTime(this.s.power ? faderGain(this.s.master) : 0, t, 0.02)
     this.mainCueSend.gain.setTargetAtTime(this.s.mainCue ? 1 : 0, t, 0.01)
-    this.phonesGain.gain.setTargetAtTime(this.s.phones * this.s.phones, t, 0.02)
+    this.phonesGain.gain.setTargetAtTime(faderGain(this.s.phones), t, 0.02)
     this.applyStreamGain()
   }
   /**
@@ -474,13 +476,13 @@ export class Mixer {
    */
   private applyStreamGain() {
     const route = this.cap ? this.s.captureRoute : null
-    const main = route ? 1 : this.s.power ? this.s.master * this.s.master : 0
+    const main = route ? 1 : this.s.power ? faderGain(this.s.master) : 0
     for (const d of this.known) {
       const i = this.decks.indexOf(d)
       if (i >= 0) {
         const ch = this.s.ch[i]
-        d.setMixGain(route === String(i) ? 1 : ch.fader * ch.fader * Math.min(1, dbToLin(ch.gain)) * main)
-      } else d.setMixGain(d === this.auxDeck ? main : 0) // unplugged: silent
+        d.setMixGain(route === String(i) ? 1 : Math.min(1, faderGain(ch.fader) * dbToLin(ch.gain) * main))
+      } else d.setMixGain(d === this.auxDeck ? Math.min(1, main) : 0) // unplugged: silent
     }
   }
 

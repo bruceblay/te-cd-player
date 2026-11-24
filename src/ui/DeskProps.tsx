@@ -24,11 +24,14 @@ export type PropId = (typeof PROP_CATALOG)[number]['id']
 
 export interface PlacedProp {
   id: PropId
-  /** viewport percentage 0..100 */
+  /** viewport percentage 0..100 (2D view) */
   x: number
   y: number
   /** degrees */
   rot: number
+  /** world units on the 3D tabletop (1 unit = 10 mm) */
+  x3d?: number
+  z3d?: number
   /** rolled face for dice (1..6 or 1..20) */
   face?: number
 }
@@ -82,7 +85,7 @@ export function readSavedProps(): PlacedProp[] | null {
     const out: PlacedProp[] = []
     for (const item of parsed) {
       if (!item || typeof item !== 'object') continue
-      const { id, x, y, rot, face } = item as Record<string, unknown>
+      const { id, x, y, rot, face, x3d, z3d } = item as Record<string, unknown>
       if (typeof id !== 'string' || !PROP_MAP.has(id as PropId) || seen.has(id as PropId)) continue
       seen.add(id as PropId)
       const pid = id as PropId
@@ -98,6 +101,8 @@ export function readSavedProps(): PlacedProp[] | null {
         x: typeof x === 'number' && Number.isFinite(x) ? Math.max(2, Math.min(98, x)) : 50,
         y: typeof y === 'number' && Number.isFinite(y) ? Math.max(3, Math.min(97, y)) : 50,
         rot: typeof rot === 'number' && Number.isFinite(rot) ? rot : 0,
+        ...(typeof x3d === 'number' && Number.isFinite(x3d) ? { x3d: Math.max(-58, Math.min(58, x3d)) } : {}),
+        ...(typeof z3d === 'number' && Number.isFinite(z3d) ? { z3d: Math.max(-32, Math.min(32, z3d)) } : {}),
         ...(validFace !== undefined ? { face: validFace } : {}),
       })
     }
@@ -312,17 +317,167 @@ export function clearGearOverlap(props: PlacedProp[]): PlacedProp[] {
 export function createInitialProps(): PlacedProp[] {
   const placed: PlacedProp[] = []
   for (const id of DEFAULT_IDS) placed.push(randomSafeSpot(id, placed))
-  return placed
+  return ensureProps3D(placed, 2, true)
 }
 
-export function spawnProp(id: PropId, existing: PlacedProp[]): PlacedProp {
-  return randomSafeSpot(id, existing)
+export function spawnProp(id: PropId, existing: PlacedProp[], deckCount: 1 | 2 = 2, mixerOn = true): PlacedProp {
+  const p2d = randomSafeSpot(id, existing)
+  const spot3d = randomSafeSpot3D(id, existing, deckCount, mixerOn)
+  return { ...p2d, x3d: spot3d.x3d, z3d: spot3d.z3d, rot: spot3d.rot }
 }
 
-export function scatterProps(props: PlacedProp[]): PlacedProp[] {
+export function scatterProps(props: PlacedProp[], deckCount: 1 | 2 = 2, mixerOn = true): PlacedProp[] {
   const placed: PlacedProp[] = []
-  for (const p of props) placed.push(randomSafeSpot(p.id, placed))
+  for (const p of props) {
+    const p2d = randomSafeSpot(p.id, placed)
+    const spot3d = randomSafeSpot3D(p.id, placed, deckCount, mixerOn)
+    placed.push({ ...p2d, x3d: spot3d.x3d, z3d: spot3d.z3d, rot: spot3d.rot })
+  }
   return placed
+}
+
+/* ---------------- 3D Tabletop Placement (1 world unit = 10 mm) ---------------- */
+
+const PROP_EXTENTS_3D: Record<PropId, { halfW: number; halfD: number; rad: number }> = {
+  succulent: { halfW: 3.1, halfD: 3.1, rad: 3.2 },
+  die: { halfW: 0.9, halfD: 0.9, rad: 1.0 },
+  d20: { halfW: 1.15, halfD: 1.15, rad: 1.25 },
+  pencil: { halfW: 8.3, halfD: 0.55, rad: 4.2 },
+  keycap: { halfW: 1.0, halfD: 1.0, rad: 1.1 },
+  capo: { halfW: 4.3, halfD: 3.4, rad: 3.9 },
+}
+
+function rigHalfWidth3D(deckCount: 1 | 2, mixerOn: boolean): number {
+  const bc1W = 18.049
+  const skW = 10.22
+  const gap = 1.15
+  if (!mixerOn) return bc1W * 0.5
+  if (deckCount === 1) return (bc1W + gap + skW) * 0.5
+  return (bc1W * 2 + skW + gap * 2) * 0.5
+}
+
+/** Pick a collision-free 3D world (x3d, z3d, rot) right around the visible rig on the walnut tabletop. */
+export function randomSafeSpot3D(
+  id: PropId,
+  existing: PlacedProp[],
+  deckCount: 1 | 2,
+  mixerOn: boolean,
+): { x3d: number; z3d: number; rot: number } {
+  const ext = PROP_EXTENTS_3D[id]
+  const rigHW = rigHalfWidth3D(deckCount, mixerOn)
+  const rigHD = 12.47
+  const rearPad = mixerOn ? 4.4 : 1.4
+  const pad = 1.2
+
+  const minX = -Math.min(40, rigHW + 14)
+  const maxX = Math.min(40, rigHW + 14)
+
+  const hitsRig = (x: number, z: number, rotDeg: number) => {
+    const { rx, ry: rz } = extents(ext.halfW, ext.halfD, rotDeg)
+    return (
+      x + rx > -(rigHW + pad) &&
+      x - rx < rigHW + pad &&
+      z + rz > -(rigHD + rearPad) &&
+      z - rz < rigHD + pad
+    )
+  }
+
+  const hitsOther = (x: number, z: number) =>
+    existing.some((o) => {
+      if (o.x3d === undefined || o.z3d === undefined) return false
+      const oe = PROP_EXTENTS_3D[o.id]
+      return Math.hypot(x - o.x3d, z - o.z3d) < ext.rad + oe.rad + 1.4
+    })
+
+  // Candidate bands visible inside the hero 'desk' camera frame on both wide and square viewports:
+  // Strongly favor front foreground and rear tabletop (always in-frame), using flanks mainly for 1-deck layouts.
+  const isLong = ext.halfW > ext.halfD * 3
+  const frameHalfX = Math.min(24.5, rigHW + (deckCount === 1 ? 10 : 0.8))
+  const bands: { x0: number; x1: number; z0: number; z1: number; vertical: boolean; weight: number }[] = [
+    // Front foreground of table (always super visible in desk, low & top angles!)
+    { x0: -frameHalfX + 2.5, x1: frameHalfX - 2.5, z0: rigHD + ext.halfD + 0.9, z1: rigHD + 10.5 - ext.halfD * 0.4, vertical: false, weight: 5 },
+    // Rear behind patch cables (super visible in desk & top angles)
+    { x0: -frameHalfX + 2.5, x1: frameHalfX - 2.5, z0: -(rigHD + rearPad + 8.5) + ext.halfD * 0.4, z1: -(rigHD + rearPad + ext.halfD + 0.5), vertical: false, weight: 4 },
+  ]
+  if (deckCount === 1) {
+    // 1-deck layouts have generous in-frame table space on both flanks
+    bands.push(
+      { x0: minX + (isLong ? ext.halfD : ext.halfW), x1: -(rigHW + (isLong ? ext.halfD : ext.halfW) + 1.0), z0: -rigHD, z1: rigHD, vertical: isLong, weight: 3 },
+      { x0: rigHW + (isLong ? ext.halfD : ext.halfW) + 1.0, x1: maxX - (isLong ? ext.halfD : ext.halfW), z0: -rigHD, z1: rigHD, vertical: isLong, weight: 3 },
+    )
+  }
+  const validBands = bands.filter((b) => b.x1 > b.x0 + 0.4 && b.z1 > b.z0 + 0.4)
+  if (!validBands.length) {
+    validBands.push({ x0: -21, x1: 21, z0: rigHD + 3.8, z1: rigHD + 9.2, vertical: false, weight: 1 })
+  }
+  const totalWeight = validBands.reduce((s, b) => s + b.weight, 0)
+
+  let best: { x3d: number; z3d: number; rot: number; score: number } | null = null
+  for (let i = 0; i < 140; i++) {
+    let pick = Math.random() * totalWeight
+    let b = validBands[validBands.length - 1]
+    for (const cand of validBands) {
+      pick -= cand.weight
+      if (pick <= 0) {
+        b = cand
+        break
+      }
+    }
+    const x = b.x0 + Math.random() * (b.x1 - b.x0)
+    const z = b.z0 + Math.random() * (b.z1 - b.z0)
+    const rot = b.vertical
+      ? (Math.random() > 0.5 ? 90 : -90) + Math.round((Math.random() - 0.5) * 18)
+      : isLong
+        ? Math.round((Math.random() - 0.5) * 26)
+        : Math.round((Math.random() - 0.5) * 110)
+
+    const inRig = hitsRig(x, z, rot)
+    const inOther = hitsOther(x, z)
+    if (!inRig && !inOther) return { x3d: x, z3d: z, rot }
+    const score = (inRig ? 100 : 0) + (inOther ? 25 : 0) + Math.hypot(x, z) * 0.05
+    if (!best || score < best.score) best = { x3d: x, z3d: z, rot, score }
+  }
+  return best ? { x3d: best.x3d, z3d: best.z3d, rot: best.rot } : { x3d: -rigHW - 4, z3d: 14, rot: 12 }
+}
+
+/** Populate missing 3D coordinates and nudge any 3D props colliding with the active rig layout. */
+export function ensureProps3D(props: PlacedProp[], deckCount: 1 | 2, mixerOn: boolean): PlacedProp[] {
+  const rigHW = rigHalfWidth3D(deckCount, mixerOn)
+  const rigHD = 12.47
+  let changed = false
+  const placed: PlacedProp[] = []
+
+  for (const p of props) {
+    const ext = PROP_EXTENTS_3D[p.id]
+    const hasCoords = typeof p.x3d === 'number' && typeof p.z3d === 'number'
+    let needsSpot = !hasCoords
+    if (hasCoords) {
+      // Only relocate automatically if it wasn't intentionally placed (keep user placements on CD/gear!)
+      if (Math.abs(p.x3d!) > 54 || Math.abs(p.z3d!) > 30) needsSpot = true
+    }
+    if (needsSpot) {
+      const spot = randomSafeSpot3D(p.id, placed, deckCount, mixerOn)
+      const next: PlacedProp = { ...p, x3d: spot.x3d, z3d: spot.z3d }
+      placed.push(next)
+      changed = true
+    } else {
+      // Check if an initial/saved 3D prop would clip into a newly expanded rig (skip if on top of a CD)
+      const { rx, ry: rz } = extents(ext.halfW, ext.halfD, p.rot)
+      const inRig =
+        p.x3d! + rx > -(rigHW + 0.4) &&
+        p.x3d! - rx < rigHW + 0.4 &&
+        p.z3d! + rz > -(rigHD + 0.4) &&
+        p.z3d! - rz < rigHD + 0.4
+      if (inRig && !hasCoords) {
+        const spot = randomSafeSpot3D(p.id, placed, deckCount, mixerOn)
+        placed.push({ ...p, x3d: spot.x3d, z3d: spot.z3d })
+        changed = true
+      } else {
+        placed.push(p)
+      }
+    }
+  }
+  return changed ? placed : props
 }
 
 /* ---------------- Component ---------------- */
