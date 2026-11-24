@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { CaptureRoute, Mixer, MixerState } from '../engine/mixer'
+import { canCaptureTab, type CaptureRoute, type Mixer, type MixerState } from '../engine/mixer'
 
 const noSub = () => () => {}
 const noState = () => null
@@ -12,17 +12,12 @@ const ROUTE_TEXT: Record<CaptureRoute, string> = {
   none: 'waiting for a streaming disc',
 }
 
-const canCapture = () =>
-  typeof navigator !== 'undefined' &&
-  !!navigator.mediaDevices?.getDisplayMedia &&
-  !matchMedia('(pointer: coarse)').matches
-
 /** Drawer section: run YouTube, SoundCloud and Spotify through the mixer by capturing this tab. */
 export function StreamFxSection({ mixer, open }: { mixer: Mixer | null; open: boolean }) {
   const s = useSyncExternalStore<MixerState | null>(mixer ? mixer.subscribe : noSub, mixer ? mixer.getState : noState)
   const tab = open ? 0 : -1
   const on = s?.streamFx === 'on'
-  const supported = canCapture()
+  const supported = canCaptureTab()
 
   let note: string
   if (!supported) note = 'needs Chrome or Edge on a computer'

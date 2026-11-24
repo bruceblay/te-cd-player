@@ -412,6 +412,20 @@ export default function App() {
   }, [decks])
 
   // MIDI learn: keep the mappable controls in step with the layout, and reconnect if it was on last time
+  // stream FX asks on the first click or key press once a streaming disc is in
+  useEffect(() => {
+    if (!mixerOn || OG) return
+    const ask = (e: Event) => {
+      if (e instanceof KeyboardEvent && (e.key === 'Escape' || e.repeat)) return
+      getMixer().autoStreamFx()
+    }
+    window.addEventListener('click', ask, true)
+    window.addEventListener('keydown', ask, true)
+    return () => {
+      window.removeEventListener('click', ask, true)
+      window.removeEventListener('keydown', ask, true)
+    }
+  }, [mixerOn])
   useEffect(() => {
     midiLearn.setControls(buildControls(decks, deckCount, () => (mixerOn ? getMixer() : null)))
   }, [decks, deckCount, mixerOn])

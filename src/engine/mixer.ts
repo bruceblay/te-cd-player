@@ -17,6 +17,10 @@ export type CompType = 'glue' | 'punch' | 'limit'
 export type Screen = 'main' | 'channel' | 'comp' | 'tempo' | 'fx' | 'settings' | 'level'
 export type Input = 'local' | 'stream' | null
 /** where captured stream audio goes: one stream's channel or aux, or the main mix when several streams share it */
+/** tab audio capture: Chromium desktop only */
+export const canCaptureTab = () =>
+  typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia && !matchMedia('(pointer: coarse)').matches
+
 export type CaptureRoute = '0' | '1' | 'aux' | 'sum' | 'none'
 type Ch = 0 | 1
 /** where a cable from a deck is plugged in: a channel, the aux input, or nowhere */
@@ -489,6 +493,19 @@ export class Mixer {
     else if (route === 'sum') this.capIn.connect(this.masterSum)
     this.set({ captureRoute: route })
     this.applyStreamGain()
+  }
+
+  private autoAsked = false
+  /**
+   * Called on every click / key press: the first one after a streaming disc is
+   * plugged in starts stream FX (the browser needs a gesture for the share
+   * prompt and the pop-up). Asked once per visit; the drawer can start it later.
+   */
+  autoStreamFx() {
+    if (this.autoAsked || this.cap || this.s.streamFx !== 'off' || this.timer === undefined) return
+    if (!canCaptureTab() || this.captureRouteNow() === 'none') return
+    this.autoAsked = true
+    void this.startStreamFx()
   }
 
   /**
