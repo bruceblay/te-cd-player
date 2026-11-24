@@ -228,6 +228,18 @@ export class Mixer {
   private cueDest: MediaStreamAudioDestinationNode
   private cueEl: HTMLAudioElement | null = null
   private readonly capIn: GainNode
+  private readonly capMeters: [AnalyserNode, AnalyserNode]
+  private capBuf = new Float32Array(512)
+  /** peak levels of the captured audio, before the strip: what the deck itself puts out */
+  private capLevels = (): [number, number] => {
+    const peak = (a: AnalyserNode) => {
+      a.getFloatTimeDomainData(this.capBuf)
+      let m = 0
+      for (let i = 0; i < this.capBuf.length; i++) m = Math.max(m, Math.abs(this.capBuf[i]))
+      return m
+    }
+    return [peak(this.capMeters[0]), peak(this.capMeters[1])]
+  }
   private cap: {
     stream: MediaStream
     src: MediaStreamAudioSourceNode
@@ -312,6 +324,11 @@ export class Mixer {
     this.masterMeters = [new AnalyserNode(ctx, { fftSize: 512 }), new AnalyserNode(ctx, { fftSize: 512 })]
     this.meterSplit = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 })
     this.capIn = new GainNode(ctx)
+    const capSplit = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 })
+    this.capMeters = [new AnalyserNode(ctx, { fftSize: 512 }), new AnalyserNode(ctx, { fftSize: 512 })]
+    this.capIn.connect(capSplit)
+    capSplit.connect(this.capMeters[0], 0)
+    capSplit.connect(this.capMeters[1], 1)
     this.masterGain.connect(ctx.destination)
     this.masterGain.connect(this.meterSplit)
     this.meterSplit.connect(this.masterMeters[0], 0)
@@ -376,7 +393,7 @@ export class Mixer {
       deck.bus.connect(this.strips[jack].input)
     }
     this.applyStreamGain()
-    this.routeCapture()
+    this.routeCapture(true)
   }
   /** the main mix goes to the speakers, or to the stream FX window while the tab is captured */
   private connectMain() {
@@ -487,12 +504,26 @@ export class Mixer {
     if (!this.cap) return
     const route = this.captureRouteNow()
     if (route === this.s.captureRoute && !force) return
-    this.capIn.disconnect()
+    this.unrouteCapture()
     if (route === '0' || route === '1') this.capIn.connect(this.strips[+route].input)
     else if (route === 'aux') this.capIn.connect(this.auxIn)
     else if (route === 'sum') this.capIn.connect(this.masterSum)
     this.set({ captureRoute: route })
     this.applyStreamGain()
+    // a lone captured stream gives its deck a real VU; shared, the decks can't be told apart
+    for (const d of this.known) {
+      const own = (route === '0' || route === '1') && this.decks[+route] === d
+      d.setLevelTap(own || (route === 'aux' && d === this.auxDeck) ? this.capLevels : null)
+    }
+  }
+  private unrouteCapture() {
+    for (const n of [this.strips[0].input, this.strips[1].input, this.auxIn, this.masterSum]) {
+      try {
+        this.capIn.disconnect(n)
+      } catch {
+        /* wasn't connected */
+      }
+    }
   }
 
   /** the share prompt was cancelled: don't ask again this visit (the drawer still can) */
@@ -580,7 +611,8 @@ export class Mixer {
     clearInterval(c.watch)
     c.stream.getTracks().forEach((t) => t.stop())
     c.src.disconnect()
-    this.capIn.disconnect()
+    this.unrouteCapture()
+    for (const d of this.known) d.setLevelTap(null)
     try {
       c.el.srcObject = null
       if (!c.win.closed) c.win.close()

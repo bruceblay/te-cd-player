@@ -493,6 +493,12 @@ export class Deck {
     src.setVolume((this.s.level / 100) * (src.kind === 'local' ? 1 : this.mixGain))
   }
 
+  private levelTap: (() => [number, number]) | null = null
+  /** set by the mixer while this deck's stream is captured: real levels for the VU */
+  setLevelTap(fn: (() => [number, number]) | null) {
+    this.levelTap = fn
+  }
+
   /** set by the mixer: 0..1, applied to streams through their player volume */
   setMixGain(g: number) {
     this.mixGain = clamp(g, 0, 1)
@@ -824,8 +830,9 @@ export class Deck {
 
     // VU meters
     if (this.on && this.s.transport === 'playing') {
-      if (this.source?.levels) {
-        const [l, r] = this.source.levels()
+      const levels = this.source?.levels ? () => this.source!.levels!() : this.levelTap
+      if (levels) {
+        const [l, r] = levels()
         const bars = (p: number) => clamp((20 * Math.log10(p + 1e-6) + 36) / 36, 0, 1)
         // instant attack, ~300 ms release
         const fall = (v: number, t: number) => (t > v ? t : Math.max(t, v * 0.82))
