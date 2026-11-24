@@ -7,7 +7,6 @@ import pencilImg from '../assets/props/pencil.png'
 import succulentImg from '../assets/props/succulent.png'
 import type { Deck } from '../engine/deck'
 import { Dice3D, type Dice3DHandle } from './Dice3D'
-import { capturePointer } from './controls'
 
 // Real-world width of the BC-1 top plate: 370 diagram units, where 246 units = 120 mm CD.
 const BC1_WIDTH_MM = (370 / 246) * 120 // ~180.5 mm
@@ -330,8 +329,24 @@ export function DeskProps({
   const [activeId, setActiveId] = useState<PropId | null>(null)
   const [mode, setMode] = useState<'drag' | 'rotate' | null>(null)
   const [pxPerMm, setPxPerMm] = useState(measurePxPerMm)
-  const drag = useRef<{ id: PropId; startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(null)
-  const rotateRef = useRef<{ id: PropId; cx: number; cy: number; startAng: number; origRot: number } | null>(null)
+  const drag = useRef<{
+    id: PropId
+    startX: number
+    startY: number
+    origX: number
+    origY: number
+    curX: number
+    curY: number
+    moved: boolean
+  } | null>(null)
+  const rotateRef = useRef<{
+    id: PropId
+    cx: number
+    cy: number
+    startAng: number
+    origRot: number
+    curRot: number
+  } | null>(null)
   const wrapRefs = useRef<Partial<Record<PropId, HTMLDivElement | null>>>({})
   const rotRefs = useRef<Partial<Record<PropId, HTMLDivElement | null>>>({})
   const visualRefs = useRef<Partial<Record<PropId, HTMLDivElement | null>>>({})
@@ -382,7 +397,7 @@ export function DeskProps({
         if (!discEl) return
         const rect = discEl.getBoundingClientRect()
         if (!rect.width) return
-        const dDeg = (360 / 1.6) * (s.vari / 100) * dt
+        const dDeg = (360 / 0.32) * (s.vari / 100) * dt
         spinners.push({
           cx: rect.left + rect.width / 2,
           cy: rect.top + rect.height / 2,
@@ -512,7 +527,7 @@ export function DeskProps({
       )
     }
 
-    onChange((cur) =>
+    onChangeRef.current((cur) =>
       cur.map((p) => (p.id === prop.id ? { ...p, x: nextX, y: nextY, face: finalFace, rot: p.rot + rotDelta } : p)),
     )
     diceRefs.current[prop.id]?.roll(finalFace, onDrop)
@@ -526,7 +541,7 @@ export function DeskProps({
     }
     const nudge = Math.round((Math.random() - 0.5) * 16)
     if (nudge !== 0) {
-      onChange((cur) => cur.map((p) => (p.id === prop.id ? { ...p, rot: p.rot + nudge } : p)))
+      onChangeRef.current((cur) => cur.map((p) => (p.id === prop.id ? { ...p, rot: p.rot + nudge } : p)))
     }
     const el = visualRefs.current[prop.id]
     if (el && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -537,8 +552,100 @@ export function DeskProps({
     }
   }
 
+  // Window-level pointer listeners for active drag & rotate so moving fast or across
+  // gear controls (or DOM z-order changes) can never drop pointer capture or catch.
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const d = drag.current
+      if (d) {
+        if (!(e.buttons & 1)) {
+          finishDrag()
+          return
+        }
+        const dx = e.clientX - d.startX
+        const dy = e.clientY - d.startY
+        if (!d.moved && Math.hypot(dx, dy) > 4) d.moved = true
+        if (!d.moved) return
+        const nx = Math.max(2, Math.min(98, d.origX + (dx / window.innerWidth) * 100))
+        const ny = Math.max(3, Math.min(97, d.origY + (dy / window.innerHeight) * 100))
+        d.curX = nx
+        d.curY = ny
+        const wrap = wrapRefs.current[d.id]
+        if (wrap) {
+          wrap.style.left = `${nx}%`
+          wrap.style.top = `${ny}%`
+        }
+        const live = liveRef.current.find((p) => p.id === d.id)
+        if (live) {
+          live.x = nx
+          live.y = ny
+        }
+        return
+      }
+
+      const r = rotateRef.current
+      if (r) {
+        if (!(e.buttons & 1)) {
+          finishRotate()
+          return
+        }
+        const ang = (Math.atan2(e.clientY - r.cy, e.clientX - r.cx) * 180) / Math.PI
+        const nextRot = Math.round(r.origRot + (ang - r.startAng))
+        r.curRot = nextRot
+        if (isDie(r.id)) {
+          diceRefs.current[r.id]?.setDeskRot(nextRot)
+        } else {
+          const rotEl = rotRefs.current[r.id]
+          if (rotEl) rotEl.style.transform = `rotate(${nextRot}deg)`
+        }
+        const live = liveRef.current.find((p) => p.id === r.id)
+        if (live) live.rot = nextRot
+      }
+    }
+
+    const finishDrag = () => {
+      const d = drag.current
+      if (!d) return
+      drag.current = null
+      setActiveId(null)
+      setMode(null)
+      const curItem = liveRef.current.find((p) => p.id === d.id)
+      if (!curItem) return
+      const committed: PlacedProp = { ...curItem, x: d.curX, y: d.curY }
+      if (!d.moved) {
+        if (isDie(d.id)) rollDie(committed, false)
+        return
+      }
+      onChangeRef.current((cur) => cur.map((p) => (p.id === d.id ? { ...p, x: d.curX, y: d.curY } : p)))
+      settleItem(committed)
+    }
+
+    const finishRotate = () => {
+      const r = rotateRef.current
+      if (!r) return
+      rotateRef.current = null
+      setActiveId(null)
+      setMode(null)
+      onChangeRef.current((cur) => cur.map((p) => (p.id === r.id ? { ...p, rot: r.curRot } : p)))
+    }
+
+    const onUp = () => {
+      if (drag.current) finishDrag()
+      if (rotateRef.current) finishRotate()
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [])
+
   return (
-    <div className="desk-props" aria-label="desk items">
+    <div className={`desk-props ${activeId ? 'dragging' : ''}`} aria-label="desk items">
       {items.map((prop) => {
         const def = PROP_MAP.get(prop.id)
         if (!def) return null
@@ -564,8 +671,8 @@ export function DeskProps({
             onPointerDown={(e) => {
               if (e.button !== 0) return
               if ((e.target as Element).closest('.desk-prop-btn')) return
+              e.preventDefault()
               e.stopPropagation()
-              capturePointer(e.currentTarget, e.pointerId)
               bringToFront(prop.id)
               setActiveId(prop.id)
               setMode('drag')
@@ -575,44 +682,9 @@ export function DeskProps({
                 startY: e.clientY,
                 origX: prop.x,
                 origY: prop.y,
+                curX: prop.x,
+                curY: prop.y,
                 moved: false,
-              }
-            }}
-            onPointerMove={(e) => {
-              const d = drag.current
-              if (!d || d.id !== prop.id) return
-              if (!(e.buttons & 1)) {
-                drag.current = null
-                setActiveId(null)
-                setMode(null)
-                return
-              }
-              const dx = e.clientX - d.startX
-              const dy = e.clientY - d.startY
-              if (Math.hypot(dx, dy) > 4) d.moved = true
-              if (!d.moved) return
-              const nx = Math.max(2, Math.min(98, d.origX + (dx / window.innerWidth) * 100))
-              const ny = Math.max(3, Math.min(97, d.origY + (dy / window.innerHeight) * 100))
-              onChange((cur) => cur.map((p) => (p.id === prop.id ? { ...p, x: nx, y: ny } : p)))
-            }}
-            onPointerUp={() => {
-              const d = drag.current
-              if (!d || d.id !== prop.id) return
-              const wasTap = !d.moved
-              drag.current = null
-              setActiveId(null)
-              setMode(null)
-              if (wasTap) {
-                if (threeD) rollDie(prop, false)
-              } else {
-                settleItem(prop)
-              }
-            }}
-            onPointerCancel={() => {
-              if (drag.current?.id === prop.id) {
-                drag.current = null
-                setActiveId(null)
-                setMode(null)
               }
             }}
             onWheel={(e) => {
@@ -657,8 +729,8 @@ export function DeskProps({
               title="drag to rotate"
               onPointerDown={(e) => {
                 if (e.button !== 0) return
+                e.preventDefault()
                 e.stopPropagation()
-                capturePointer(e.currentTarget, e.pointerId)
                 bringToFront(prop.id)
                 const wrap = wrapRefs.current[prop.id]
                 if (!wrap) return
@@ -666,36 +738,9 @@ export function DeskProps({
                 const cx = r.left + r.width / 2
                 const cy = r.top + r.height / 2
                 const startAng = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI
-                rotateRef.current = { id: prop.id, cx, cy, startAng, origRot: prop.rot }
+                rotateRef.current = { id: prop.id, cx, cy, startAng, origRot: prop.rot, curRot: prop.rot }
                 setActiveId(prop.id)
                 setMode('rotate')
-              }}
-              onPointerMove={(e) => {
-                const r = rotateRef.current
-                if (!r || r.id !== prop.id) return
-                if (!(e.buttons & 1)) {
-                  rotateRef.current = null
-                  setActiveId(null)
-                  setMode(null)
-                  return
-                }
-                const ang = (Math.atan2(e.clientY - r.cy, e.clientX - r.cx) * 180) / Math.PI
-                const nextRot = Math.round(r.origRot + (ang - r.startAng))
-                onChange((cur) => cur.map((p) => (p.id === prop.id ? { ...p, rot: nextRot } : p)))
-              }}
-              onPointerUp={() => {
-                if (rotateRef.current?.id === prop.id) {
-                  rotateRef.current = null
-                  setActiveId(null)
-                  setMode(null)
-                }
-              }}
-              onPointerCancel={() => {
-                if (rotateRef.current?.id === prop.id) {
-                  rotateRef.current = null
-                  setActiveId(null)
-                  setMode(null)
-                }
               }}
             >
               ↻

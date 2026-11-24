@@ -126,6 +126,36 @@ export function HandTracker({
     window.addEventListener('resize', syncCanvasSize)
     syncCanvasSize()
 
+    // Promote the hand-overlay canvas into the browser top-layer via Popover API so
+    // hands always paint ABOVE both the slide-out drawer AND <dialog>.showModal() modals.
+    const promoteTopLayer = () => {
+      const c = canvasRef.current as (HTMLCanvasElement & { showPopover?: () => void; hidePopover?: () => void }) | null
+      if (!c || typeof c.showPopover !== 'function') return
+      try {
+        // Re-showing moves the popover to the very top of the top-layer stack above newly opened dialogs
+        if (c.matches(':popover-open')) c.hidePopover()
+        c.showPopover()
+      } catch {
+        /* fallback to high z-index if Popover API unsupported */
+      }
+    }
+    promoteTopLayer()
+
+    // Whenever any <dialog> opens (gets the `open` attribute), re-promote the hand overlay above it
+    const dialogObserver = new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.target instanceof HTMLDialogElement && m.target.open) {
+          promoteTopLayer()
+          break
+        }
+      }
+    })
+    dialogObserver.observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['open'],
+    })
+
     const start = async () => {
       statusCb.current({ state: 'loading', hands: 0 })
       try {
@@ -298,12 +328,18 @@ export function HandTracker({
     return () => {
       cancelled = true
       cancelAnimationFrame(raf)
+      dialogObserver.disconnect()
       window.removeEventListener('resize', syncCanvasSize)
       for (const s of slots) releaseSlot(s)
       landmarker?.close()
       stream?.getTracks().forEach((t) => t.stop())
-      const c = canvasRef.current
+      const c = canvasRef.current as (HTMLCanvasElement & { hidePopover?: () => void }) | null
       c?.getContext('2d')?.clearRect(0, 0, c.width, c.height)
+      try {
+        if (c && c.matches(':popover-open')) c.hidePopover?.()
+      } catch {
+        /* ignore */
+      }
     }
   }, [enabled])
 
@@ -312,7 +348,7 @@ export function HandTracker({
   return (
     <>
       <video ref={videoRef} className="hand-cam" muted playsInline aria-hidden />
-      <canvas ref={canvasRef} className="hand-overlay" aria-hidden />
+      <canvas ref={canvasRef} className="hand-overlay" popover="manual" aria-hidden />
     </>
   )
 }

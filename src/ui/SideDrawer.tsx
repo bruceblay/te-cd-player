@@ -1,8 +1,15 @@
+import {
+  beginSpotifyLogin,
+  spotifyConfigured,
+  spotifyLogout,
+  type SpotifyProfile,
+} from '../sources/spotifyAuth'
 import { PROP_CATALOG, type PlacedProp, type PropId } from './DeskProps'
 import { HAND_STYLES, type HandStyle } from './handRender'
 import type { HandStatus } from './HandTracker'
 
 export type DeckCount = 1 | 2
+export type ViewMode = '2d' | '3d'
 
 export interface LayoutConfig {
   decks: DeckCount
@@ -12,8 +19,26 @@ export interface LayoutConfig {
 
 const DECKS_KEY = 'bc1.decks'
 const MIXER_KEY = 'bc1.mixer'
+const VIEW_KEY = 'bc1.view'
 const HAND_STYLE_KEY = 'bc1.handStyle'
 const HAND_STYLE_IDS = new Set<string>(HAND_STYLES.map((s) => s.id))
+
+export function readViewMode(): ViewMode {
+  try {
+    const v = localStorage.getItem(VIEW_KEY)
+    return v === '2d' || v === '3d' ? v : '3d'
+  } catch {
+    return '3d'
+  }
+}
+
+export function saveViewMode(view: ViewMode) {
+  try {
+    localStorage.setItem(VIEW_KEY, view)
+  } catch {
+    /* private mode: just not remembered */
+  }
+}
 
 export function readHandStyle(): HandStyle {
   try {
@@ -59,6 +84,8 @@ export function SideDrawer({
   open,
   onOpen,
   onClose,
+  view,
+  onView,
   layout,
   onLayout,
   handsOn,
@@ -72,10 +99,15 @@ export function SideDrawer({
   onToggleProp,
   onScatterProps,
   onClearProps,
+  spotifyIn,
+  spotifyProfile,
+  onSpotifyOut,
 }: {
   open: boolean
   onOpen: () => void
   onClose: () => void
+  view: ViewMode
+  onView: (next: ViewMode) => void
   layout: LayoutConfig
   onLayout: (next: LayoutConfig) => void
   handsOn: boolean
@@ -89,8 +121,12 @@ export function SideDrawer({
   onToggleProp: (id: PropId) => void
   onScatterProps: () => void
   onClearProps: () => void
+  spotifyIn: boolean
+  spotifyProfile: SpotifyProfile | null
+  onSpotifyOut: () => void
 }) {
   const activeProps = new Set(props.map((p) => p.id))
+  const spotifyReady = spotifyConfigured()
   return (
     <>
       <button
@@ -122,6 +158,25 @@ export function SideDrawer({
 
         <section className="drawer-section">
           <h3 className="drawer-label">layout</h3>
+
+          <div className="drawer-row">
+            <span className="drawer-row-label">view</span>
+            <div className="seg-control" role="radiogroup" aria-label="view mode">
+              {(['2d', '3d'] as ViewMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={view === m}
+                  tabIndex={open ? 0 : -1}
+                  className={view === m ? 'on' : ''}
+                  onClick={() => onView(m)}
+                >
+                  {m.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="drawer-row">
             <span className="drawer-row-label">decks</span>
@@ -195,68 +250,118 @@ export function SideDrawer({
           {handStatus.state === 'error' && <p className="drawer-note error">{handStatus.error}</p>}
         </section>
 
-        <section className="drawer-section drawer-divider">
-          <div className="drawer-section-head">
-            <h3 className="drawer-label">desk</h3>
-            {propsOn && (
-              <div className="drawer-mini-actions">
+        {(spotifyReady || import.meta.env.DEV) && (
+          <section className="drawer-section drawer-divider">
+            <div className="drawer-section-head">
+              <h3 className="drawer-label">spotify</h3>
+              {spotifyIn ? (
                 <button
                   type="button"
                   className="drawer-link"
                   tabIndex={open ? 0 : -1}
-                  disabled={props.length === 0}
-                  onClick={onScatterProps}
+                  onClick={() => {
+                    spotifyLogout()
+                    onSpotifyOut()
+                  }}
                 >
-                  scatter
+                  sign out
                 </button>
-                <button
-                  type="button"
-                  className="drawer-link"
-                  tabIndex={open ? 0 : -1}
-                  disabled={props.length === 0}
-                  onClick={onClearProps}
-                >
-                  clear
-                </button>
-              </div>
+              ) : (
+                spotifyReady && (
+                  <button
+                    type="button"
+                    className="drawer-link"
+                    tabIndex={open ? 0 : -1}
+                    onClick={() => void beginSpotifyLogin()}
+                  >
+                    connect
+                  </button>
+                )
+              )}
+            </div>
+
+            {spotifyIn ? (
+              <>
+                <p className="sp-status">
+                  <span className="sp-dot" aria-hidden />
+                  <span>{spotifyProfile ? spotifyProfile.name : 'connected'}</span>
+                </p>
+                {spotifyProfile && !spotifyProfile.premium && (
+                  <p className="drawer-note">playlist import ready · full playback needs Premium</p>
+                )}
+              </>
+            ) : spotifyReady ? (
+              <p className="drawer-note">sign in to import full playlists and albums</p>
+            ) : (
+              <p className="drawer-note">set VITE_SPOTIFY_CLIENT_ID in .env.local to enable sign-in</p>
             )}
-          </div>
+          </section>
+        )}
 
-          <label className="drawer-toggle flush">
-            <span className="drawer-row-label">desk items</span>
-            <input
-              type="checkbox"
-              checked={propsOn}
-              tabIndex={open ? 0 : -1}
-              onChange={(e) => onPropsOn(e.target.checked)}
-            />
-            <span className="drawer-switch" aria-hidden />
-          </label>
+        {view === '2d' && (
+          <section className="drawer-section drawer-divider">
+            <div className="drawer-section-head">
+              <h3 className="drawer-label">desk</h3>
+              {propsOn && (
+                <div className="drawer-mini-actions">
+                  <button
+                    type="button"
+                    className="drawer-link"
+                    tabIndex={open ? 0 : -1}
+                    disabled={props.length === 0}
+                    onClick={onScatterProps}
+                  >
+                    scatter
+                  </button>
+                  <button
+                    type="button"
+                    className="drawer-link"
+                    tabIndex={open ? 0 : -1}
+                    disabled={props.length === 0}
+                    onClick={onClearProps}
+                  >
+                    clear
+                  </button>
+                </div>
+              )}
+            </div>
 
-          {propsOn && (
-            <>
-              <div className="prop-picker">
-                {PROP_CATALOG.map((p) => {
-                  const on = activeProps.has(p.id)
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      aria-pressed={on}
-                      tabIndex={open ? 0 : -1}
-                      className={`prop-chip ${on ? 'on' : ''}`}
-                      onClick={() => onToggleProp(p.id)}
-                    >
-                      <img src={p.image} alt="" aria-hidden />
-                      <span>{p.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="drawer-note">drag to move · drag ↻ or scroll to rotate · drop on a spinning CD</p>
-            </>
-          )}
-        </section>
+            <label className="drawer-toggle flush">
+              <span className="drawer-row-label">desk items</span>
+              <input
+                type="checkbox"
+                checked={propsOn}
+                tabIndex={open ? 0 : -1}
+                onChange={(e) => onPropsOn(e.target.checked)}
+              />
+              <span className="drawer-switch" aria-hidden />
+            </label>
+
+            {propsOn && (
+              <>
+                <div className="prop-picker">
+                  {PROP_CATALOG.map((p) => {
+                    const on = activeProps.has(p.id)
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        aria-pressed={on}
+                        tabIndex={open ? 0 : -1}
+                        className={`prop-chip ${on ? 'on' : ''}`}
+                        onClick={() => onToggleProp(p.id)}
+                      >
+                        <img src={p.image} alt="" aria-hidden />
+                        <span>{p.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="drawer-note">drag to move · drag ↻ or scroll to rotate · drop on a spinning CD</p>
+              </>
+            )}
+          </section>
+        )}
       </aside>
     </>
   )

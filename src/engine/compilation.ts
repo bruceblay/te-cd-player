@@ -7,7 +7,7 @@
 import { isPlayableFile, LocalSource } from '../sources/local'
 import { isSoundCloud, SoundCloudSource } from '../sources/soundcloud'
 import { parseSpotify, resolveTracks, SpotifyEmbedSource, SpotifySdkSource, type SpTrack } from '../sources/spotify'
-import { beginSpotifyLogin, spotifyConfigured, spotifyToken } from '../sources/spotifyAuth'
+import { spotifyConfigured, spotifyToken } from '../sources/spotifyAuth'
 import { parseYouTube, YouTubeSource } from '../sources/youtube'
 import type { Capabilities, DiscInfo, Source, SourceCallbacks, SourceKind } from './types'
 
@@ -82,13 +82,18 @@ export async function resolveLink(url: string, mount: HTMLElement): Promise<{ ti
   if (sp) {
     if (spotifyConfigured()) {
       if (!(await spotifyToken())) {
-        await beginSpotifyLogin(url)
-        throw new Error('login')
+        throw new Error('spotify_login_required')
       }
       const info = await resolveTracks(sp)
-      return { title: info.title, items: info.tracks.map((t) => ({ kind: 'spotify', key: key(), uri: t.uri, title: t.title, duration: t.duration })) }
+      return {
+        title: info.title,
+        items: info.tracks.map((t) => ({ kind: 'spotify', key: key(), uri: t.uri, title: t.title, duration: t.duration })),
+      }
     }
-    // without a client ID the embed plays the link as one item
+    // Full playlist / album import needs Spotify OAuth; single tracks can still play via public embed
+    if (sp.type === 'playlist' || sp.type === 'album') {
+      throw new Error('spotify_setup_required')
+    }
     const o = await oembed(`https://open.spotify.com/oembed?url=https://open.spotify.com/${sp.type}/${sp.id}`)
     const title = o?.title ?? 'Spotify'
     return { title, items: [{ kind: 'spotify', key: key(), uri: `spotify:${sp.type}:${sp.id}`, title, embed: true }] }

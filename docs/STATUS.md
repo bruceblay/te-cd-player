@@ -17,3 +17,8 @@
 - Spotify full-control path (client ID + Premium) is untested; signing in from the burn dialog leaves the page and loses the draft.
 - SoundCloud sets: tracks past the first five only get titles once they've played.
 - Sidekick details TE doesn't document (compressor type names, parametric EQ behaviour, parallel FX routing) are educated guesses.
+
+## Feature notes (planned)
+- **Spotify auth**: Full Spotify OAuth flow (including preserving in-progress burn drafts across auth redirect, or popup-based sign-in).
+- **Full playlist imports**: Import full playlists cleanly from **Spotify**, **YouTube**, and **SoundCloud** directly into a burned disc (all tracks, titles, and durations).
+- **MIDI Assign / Learn mode**: Web MIDI controller mapping mode — click any knob, fader, button, jog, or force pad (in 2D or 3D) and wiggle a hardware MIDI CC / Note control to bind it, with persisted mappings.

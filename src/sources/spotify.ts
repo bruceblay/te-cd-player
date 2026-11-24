@@ -1,6 +1,6 @@
 import type { Capabilities, DiscInfo, Source, SourceCallbacks, TrackInfo } from '../engine/types'
 import { clamp, loadScript } from '../engine/util'
-import { spotifyToken } from './spotifyAuth'
+import { spotifyLogout, spotifyToken } from './spotifyAuth'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global {
@@ -17,11 +17,12 @@ export interface SpotifyRef {
 }
 
 export function parseSpotify(url: string): SpotifyRef | null {
-  const uri = url.match(/^spotify:(track|album|playlist):([A-Za-z0-9]+)/)
+  const clean = url.trim()
+  const uri = clean.match(/^spotify:(track|album|playlist):([A-Za-z0-9]+)/)
   if (uri) return { type: uri[1] as SpotifyRef['type'], id: uri[2] }
   try {
-    const u = new URL(url)
-    if (u.hostname !== 'open.spotify.com') return null
+    const u = new URL(clean)
+    if (u.hostname !== 'open.spotify.com' && u.hostname !== 'play.spotify.com') return null
     const m = u.pathname.match(/\/(track|album|playlist)\/([A-Za-z0-9]+)/)
     return m ? { type: m[1] as SpotifyRef['type'], id: m[2] } : null
   } catch {
@@ -47,11 +48,17 @@ function spotifySdk() {
 
 async function api(path: string, init: RequestInit = {}) {
   const token = await spotifyToken()
-  if (!token) throw new Error('login')
+  if (!token) throw new Error('spotify_login_required')
   const res = await fetch(`https://api.spotify.com/v1${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) },
   })
+  if (res.status === 401) {
+    spotifyLogout()
+    throw new Error('spotify_expired')
+  }
+  if (res.status === 403) throw new Error('spotify_forbidden')
+  if (res.status === 404) throw new Error('spotify_not_found')
   if (!res.ok) throw new Error(`spotify ${res.status}`)
   return res.status === 204 ? null : res.json().catch(() => null)
 }
@@ -61,14 +68,24 @@ export interface SpTrack extends TrackInfo {
 }
 
 export async function resolveTracks(ref: SpotifyRef): Promise<{ title: string; artwork?: string; tracks: SpTrack[] }> {
-  const toTrack = (t: any): SpTrack | null =>
-    t?.uri && (t.type === undefined || t.type === 'track')
-      ? { uri: t.uri, title: t.name, duration: (t.duration_ms ?? 0) / 1000 }
-      : null
+  const toTrack = (t: any): SpTrack | null => {
+    if (!t?.uri || t.is_local) return null
+    if (t.type !== undefined && t.type !== 'track') return null
+    const artist = Array.isArray(t.artists) && t.artists[0]?.name ? String(t.artists[0].name) : ''
+    const name = String(t.name ?? '').trim()
+    if (!name) return null
+    return {
+      uri: t.uri,
+      title: artist ? `${name} — ${artist}` : name,
+      duration: (t.duration_ms ?? 0) / 1000,
+    }
+  }
 
   if (ref.type === 'track') {
     const t = await api(`/tracks/${ref.id}`)
-    return { title: t.name, artwork: t.album?.images?.[0]?.url, tracks: [toTrack(t)!] }
+    const parsed = toTrack(t)
+    if (!parsed) throw new Error('empty')
+    return { title: t.name, artwork: t.album?.images?.[0]?.url, tracks: [parsed] }
   }
   if (ref.type === 'album') {
     const a = await api(`/albums/${ref.id}`)
@@ -76,32 +93,41 @@ export async function resolveTracks(ref: SpotifyRef): Promise<{ title: string; a
     let next: string | null = a.tracks?.next
     while (next && tracks.length < 500) {
       const page = await api(next.replace('https://api.spotify.com/v1', ''))
-      tracks.push(...page.items.map(toTrack).filter(Boolean))
+      tracks.push(...(page.items ?? []).map(toTrack).filter(Boolean))
       next = page.next
     }
+    if (!tracks.length) throw new Error('empty')
     return { title: a.name, artwork: a.images?.[0]?.url, tracks }
   }
   const meta = await api(`/playlists/${ref.id}?fields=name,images`)
   const tracks: SpTrack[] = []
-  // newer API exposes /items, older /tracks; entries are under .item or .track
-  let next: string | null = null
-  for (const ep of ['items', 'tracks']) {
+  // Standard Web API uses /tracks (limit=100); fall back to /items if migrated
+  let loaded = false
+  let lastErr: unknown = null
+  for (const ep of ['tracks', 'items']) {
     try {
-      const first = await api(`/playlists/${ref.id}/${ep}?limit=50`)
-      const take = (p: any) => tracks.push(...p.items.map((it: any) => toTrack(it.item ?? it.track)).filter(Boolean))
+      const first = await api(`/playlists/${ref.id}/${ep}?limit=100`)
+      const take = (p: any) =>
+        tracks.push(...(p.items ?? []).map((it: any) => toTrack(it?.track ?? it?.item)).filter(Boolean))
       take(first)
-      next = first.next
+      let next: string | null = first.next
       while (next && tracks.length < 500) {
         const page = await api(next.replace('https://api.spotify.com/v1', ''))
         take(page)
         next = page.next
       }
+      loaded = true
       break
-    } catch {
-      /* try the other endpoint */
+    } catch (e) {
+      lastErr = e
+      if (e instanceof Error && (e.message === 'spotify_expired' || e.message === 'spotify_forbidden' || e.message === 'spotify_not_found')) {
+        throw e
+      }
     }
   }
-  return { title: meta.name, artwork: meta.images?.[0]?.url, tracks }
+  if (!loaded && lastErr) throw lastErr
+  if (!tracks.length) throw new Error('empty')
+  return { title: meta.name || 'Spotify playlist', artwork: meta.images?.[0]?.url, tracks }
 }
 
 export class SpotifySdkSource implements Source {

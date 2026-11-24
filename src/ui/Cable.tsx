@@ -5,6 +5,8 @@ export interface CableProps {
   /** jack id each end is plugged into, or null when the plug is out */
   a: string | null
   b: string | null
+  /** accent collar colour matching the 3D TE patch plugs */
+  accent?: string
   /** which jacks each end may plug into */
   accepts: Record<End, string[]>
   onChange(end: End, jack: string | null): void
@@ -12,7 +14,7 @@ export interface CableProps {
 
 type V = { x: number; y: number }
 
-export function Cable({ a, b, accepts, onChange }: CableProps) {
+export function Cable({ a, b, accent = '#ff5a1f', accepts, onChange }: CableProps) {
   const id = useId()
   const svg = useRef<SVGSVGElement>(null)
   const paths = useRef<SVGPathElement[]>([])
@@ -33,8 +35,8 @@ export function Cable({ a, b, accepts, onChange }: CableProps) {
 
     const host = svg.current!.parentElement!
 
-    const jackPos = (id: string) => {
-      const el = host.querySelector<HTMLElement>(`[data-jack="${id}"]`)
+    const jackPos = (jackId: string) => {
+      const el = host.querySelector<HTMLElement>(`[data-jack="${jackId}"]`)
       if (!el) return null
       const r = el.getBoundingClientRect()
       const h = host.getBoundingClientRect()
@@ -65,15 +67,33 @@ export function Cable({ a, b, accepts, onChange }: CableProps) {
       const A = tail('a')
       const B = tail('b')
       s.tails = { a: A, b: B }
-      // Vertical tangents keep the strain relief aligned with each socket.
-      // Longer runs bend higher, with clearance inside the rig's top gutter.
-      const lift = Math.min(46 * U, 12 * U + Math.abs(B.x - A.x) * 0.10)
-      const top = Math.max(5 * U - h.top, Math.min(A.y, B.y) - lift)
-      const d = `M ${A.x} ${A.y} C ${A.x} ${top}, ${B.x} ${top}, ${B.x} ${B.y}`
-      const w = [4.4, 3.2, 1].map((x) => x * U)
+
+      // Natural sweeping arc out of each rear socket — allowed to arch freely
+      // off the top of the viewport rather than flattening against the top edge.
+      const span = B.x - A.x
+      const lift = 22 * U + Math.min(140 * U, Math.abs(span) * 0.24)
+      const topY = Math.min(A.y, B.y) - lift
+      const c1x = A.x + span * 0.08
+      const c2x = B.x - span * 0.08
+      const d = `M ${A.x} ${A.y} C ${c1x} ${topY}, ${c2x} ${topY}, ${B.x} ${B.y}`
+
+      // Layered cylindrical shading: [castShadow, ambientShadow, baseShade, litBody, weave, specHighlight]
+      const widths = [3.6, 3.1, 3.05, 2.35, 2.35, 0.95].map((x) => x * U)
+      const shifts: [number, number][] = [
+        [2.2 * U, 5.2 * U],
+        [0.7 * U, 1.8 * U],
+        [0, 0],
+        [-0.22 * U, -0.32 * U],
+        [-0.22 * U, -0.32 * U],
+        [-0.5 * U, -0.68 * U],
+      ]
       paths.current.forEach((el, i) => {
         el.setAttribute('d', d)
-        el.setAttribute('stroke-width', String(w[i]))
+        el.setAttribute('stroke-width', String(widths[i]))
+        const [sx, sy] = shifts[i]
+        if (sx || sy) el.setAttribute('transform', `translate(${sx} ${sy})`)
+        else el.removeAttribute('transform')
+        if (i === 4) el.setAttribute('stroke-dasharray', `${1.4 * U} ${1.6 * U}`)
       })
       for (const end of ['a', 'b'] as const) {
         const p = s.tails[end]
@@ -108,7 +128,6 @@ export function Cable({ a, b, accepts, onChange }: CableProps) {
       const m = toLocal(e)
       s.drag = { end, dx: tail.x - m.x, dy: tail.y - m.y }
       s.loose[end] = { ...tail }
-      // pulling the plug disconnects it straight away
       if (s.jacks[end]) props.current.onChange(end, null)
       s.jacks[end] = null
     }
@@ -126,16 +145,15 @@ export function Cable({ a, b, accepts, onChange }: CableProps) {
       s.drag = null
       const at = s.loose[end]!
       const U = unit()
-      // the tip of the plug is plugLen past the tail; snap if it lands near a free jack
       let best: string | null = null
       let bestD = 13 * U
-      for (const id of props.current.accepts[end]) {
-        const j = jackPos(id)
+      for (const jackId of props.current.accepts[end]) {
+        const j = jackPos(jackId)
         if (!j) continue
         const dist = Math.hypot(j.x - at.x, j.y - 13 * U - at.y)
         if (dist < bestD) {
           bestD = dist
-          best = id
+          best = jackId
         }
       }
       if (best) {
@@ -173,29 +191,55 @@ export function Cable({ a, b, accepts, onChange }: CableProps) {
   return (
     <svg className="cable" ref={svg} aria-hidden>
       <defs>
-        <linearGradient id={id + '-body'} x1="0" x2="1">
-          <stop offset="0" stopColor="#bdbdb9" />
-          <stop offset="0.35" stopColor="#f3f3f0" />
-          <stop offset="1" stopColor="#a9a9a5" />
+        <filter id={id + '-blur'} x="-30%" y="-60%" width="160%" height="220%">
+          <feGaussianBlur stdDeviation="2.6" />
+        </filter>
+        <filter id={id + '-soft'} x="-20%" y="-40%" width="140%" height="180%">
+          <feGaussianBlur stdDeviation="0.85" />
+        </filter>
+        <linearGradient id={id + '-boot'} x1="0" x2="1">
+          <stop offset="0" stopColor="#b9b8b3" />
+          <stop offset="0.34" stopColor="#dfded9" />
+          <stop offset="0.72" stopColor="#c5c4bf" />
+          <stop offset="1" stopColor="#9e9d98" />
+        </linearGradient>
+        <linearGradient id={id + '-barrel'} x1="0" x2="1">
+          <stop offset="0" stopColor="#c7c6c1" />
+          <stop offset="0.28" stopColor="#f5f4f0" />
+          <stop offset="0.62" stopColor="#e3e2dd" />
+          <stop offset="1" stopColor="#abaaa5" />
         </linearGradient>
         <linearGradient id={id + '-metal'} x1="0" x2="1">
-          <stop offset="0" stopColor="#8d8f93" />
-          <stop offset="0.4" stopColor="#e8e9ec" />
-          <stop offset="1" stopColor="#7a7c80" />
+          <stop offset="0" stopColor="#85878b" />
+          <stop offset="0.35" stopColor="#eceef1" />
+          <stop offset="0.72" stopColor="#aeb0b5" />
+          <stop offset="1" stopColor="#6c6e72" />
         </linearGradient>
       </defs>
-      {/* outline, body, highlight */}
-      <path ref={(el) => void (el && (paths.current[0] = el))} className="cable-edge" />
-      <path ref={(el) => void (el && (paths.current[1] = el))} className="cable-body" />
-      <path ref={(el) => void (el && (paths.current[2] = el))} className="cable-shine" />
+      {/* soft cast shadow, tight AO shadow, cylindrical shaded cord, subtle weave, soft highlight */}
+      <path ref={(el) => void (el && (paths.current[0] = el))} className="cable-shadow" filter={`url(#${id}-blur)`} />
+      <path ref={(el) => void (el && (paths.current[1] = el))} className="cable-ao" filter={`url(#${id}-soft)`} />
+      <path ref={(el) => void (el && (paths.current[2] = el))} className="cable-base" />
+      <path ref={(el) => void (el && (paths.current[3] = el))} className="cable-body" />
+      <path ref={(el) => void (el && (paths.current[4] = el))} className="cable-weave" />
+      <path ref={(el) => void (el && (paths.current[5] = el))} className="cable-shine" />
       {(['a', 'b'] as End[]).map((end) => (
-        // drawn pointing down (+y) from the cable at 0,0; the tip enters the jack
+        // slim TE machined 3.5mm plug pointing down (+y) from cord tail at 0,0 into jack at +13
         <g key={end} ref={(el) => void (plugs.current[end] = el)} className="plug">
-          <rect x="-2" y="-2" width="4" height="5" rx="1" fill="#cfcfcc" stroke="#8a8a86" strokeWidth="0.3" />
-          <rect x="-3.2" y="2.5" width="6.4" height="11" rx="1.4" fill={`url(#${id}-body)`} stroke="#8a8a86" strokeWidth="0.3" />
-          <rect x="-3.2" y="10.5" width="6.4" height="1" fill="#9a9a96" />
-          <rect x="-1.6" y="13.5" width="3.2" height="4.5" className="plug-tip" fill={`url(#${id}-metal)`} />
-          <rect className="plug-tip" x="-1.6" y="15.2" width="3.2" height="0.5" fill="#55575b" />
+          {/* tapered strain relief boot with subtle grip grooves */}
+          <path d="M-1.55 -1.4 L1.55 -1.4 L2.1 2.9 L-2.1 2.9 Z" fill={`url(#${id}-boot)`} />
+          <rect x="-1.75" y="0.2" width="3.5" height="0.45" fill="rgb(0 0 0 / 0.14)" />
+          <rect x="-1.9" y="1.4" width="3.8" height="0.45" fill="rgb(0 0 0 / 0.14)" />
+          {/* slim matte off-white barrel */}
+          <rect x="-2.65" y="2.6" width="5.3" height="9.4" rx="1.15" fill={`url(#${id}-barrel)`} />
+          {/* subtle recessed accent collar ring */}
+          <rect x="-2.65" y="9.1" width="5.3" height="1.15" fill={accent} opacity="0.92" />
+          {/* machined metallic collar flush against jack */}
+          <rect x="-2.0" y="11.9" width="4.0" height="1.35" rx="0.3" fill={`url(#${id}-metal)`} />
+          {/* 3.5mm TRS tip (hidden when inserted) */}
+          <rect x="-1.25" y="13.2" width="2.5" height="4.8" rx="0.4" className="plug-tip" fill={`url(#${id}-metal)`} />
+          <rect className="plug-tip" x="-1.25" y="14.6" width="2.5" height="0.45" fill="#2c2d30" />
+          <rect className="plug-tip" x="-1.25" y="16.1" width="2.5" height="0.45" fill="#2c2d30" />
           {/* generous invisible grab area */}
           <rect x="-7" y="-4" width="14" height="22" fill="transparent" />
         </g>

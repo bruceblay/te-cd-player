@@ -41,7 +41,8 @@ button {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 28px 16px 20px;
+  padding: 20px 16px;
+  overflow: clip;
 }
 .page > .rig,
 .page > .solo {
@@ -507,7 +508,7 @@ button {
      (50% 50% of the view-box would be 40,40: a corner, which made it orbit) */
   transform-box: view-box;
   transform-origin: 0 0;
-  animation: spin 1.6s linear infinite paused;
+  animation: spin 0.32s linear infinite paused;
 }
 .tt-spin.spin {
   animation-play-state: running;
@@ -535,7 +536,7 @@ button {
 .disc-face {
   position: absolute;
   inset: 0;
-  animation: spin 1.6s linear infinite paused;
+  animation: spin 0.32s linear infinite paused;
 }
 .disc-face.spin {
   animation-play-state: running;
@@ -707,17 +708,17 @@ button {
 }
 .solo {
   grid-template-columns: 1fr;
-  width: min(calc(100vw - 32px), calc((100dvh - 56px) * 370 / 511));
+  width: min(calc(100vw - 110px), calc((100dvh - 124px) * 370 / 511));
 }
 .rig {
   grid-template-columns: 740fr 44fr 374fr 44fr 740fr;
   position: relative;
-  margin-top: clamp(28px, 6vw, 94px);
-  width: min(calc(100vw - 32px), calc((100dvh - 150px) * 1942 / 1022));
+  margin-top: 0;
+  width: min(calc(100vw - 88px), calc((100dvh - 116px) * 1942 / 1022));
 }
 .rig.one-deck {
   grid-template-columns: 740fr 44fr 374fr;
-  width: min(calc(100vw - 32px), calc((100dvh - 150px) * 1158 / 1022));
+  width: min(calc(100vw - 104px), calc((100dvh - 120px) * 1158 / 1022));
 }
 .jack-anchor {
   pointer-events: none;
@@ -736,20 +737,28 @@ button {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.cable-edge {
-  stroke: #8c8b87;
+.cable-shadow {
+  stroke: rgb(42 36 28 / 0.24);
+}
+.cable-ao {
+  stroke: rgb(32 28 22 / 0.14);
+}
+.cable-base {
+  stroke: #b9b8b3;
 }
 .cable-body {
-  stroke: #e8e7e3;
+  stroke: #e7e6e1;
+}
+.cable-weave {
+  stroke: rgb(90 88 82 / 0.08);
 }
 .cable-shine {
-  stroke: rgb(255 255 255 / 0.75);
-  transform: translate(-0.6px, -0.8px);
+  stroke: rgb(255 255 255 / 0.72);
 }
 .cable .plug {
   pointer-events: auto;
   cursor: grab;
-  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.3));
+  filter: drop-shadow(1.5px 3.5px 2.5px rgb(34 28 20 / 0.26));
 }
 .cable .plug:active {
   cursor: grabbing;
@@ -1594,6 +1603,9 @@ button {
   flex-direction: column;
   gap: 8px;
 }
+.drawer-row + .drawer-row {
+  margin-top: 14px;
+}
 .drawer-row-label {
   font-size: 13px;
   font-weight: 500;
@@ -1699,6 +1711,37 @@ button {
   outline: 2px solid var(--orange);
   outline-offset: 1px;
 }
+
+/* Spotify minimal inline status (matches TE flat typography, no nested boxes) */
+.sp-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.sp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1db954;
+  flex-shrink: 0;
+}
+.lid-inline-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.lid-inline-link:hover {
+  color: var(--orange);
+}
 .drawer-note {
   margin: 12px 0 0;
   font-size: 12px;
@@ -1783,6 +1826,10 @@ button {
   pointer-events: none;
   overflow: hidden;
 }
+.desk-props.dragging {
+  pointer-events: auto;
+  cursor: grabbing;
+}
 .desk-prop {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -1791,12 +1838,14 @@ button {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  will-change: left, top;
   transition: filter 160ms ease;
   filter:
     drop-shadow(1px 3px 3px rgb(48 40 30 / 0.24))
     drop-shadow(4px 10px 12px rgb(48 40 30 / 0.22));
 }
 .desk-prop.grabbing {
+  z-index: 2;
   cursor: grabbing;
   filter:
     drop-shadow(2px 6px 6px rgb(48 40 30 / 0.26))
@@ -1877,14 +1926,80 @@ button {
   background: var(--orange);
 }
 
-/* hand tracking overlay & hidden webcam feed */
-.hand-overlay {
+/* 3D studio scene & floating camera preset pill */
+.page-3d {
+  padding: 0;
+  overflow: hidden;
+  height: 100dvh;
+}
+.studio3d {
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
+  background: #e6e3dc;
+}
+.studio3d-canvas {
+  width: 100%;
+  height: 100%;
+}
+.cam-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(239 238 233 / 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.7) inset,
+    0 0 0 1px rgb(35 35 33 / 0.1),
+    0 8px 24px -8px rgb(24 22 18 / 0.22);
+}
+.cam-bar button {
+  padding: 6px 13px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+.cam-bar button:hover {
+  color: var(--ink);
+}
+.cam-bar button.on {
+  background: #232321;
+  color: #f6f5f0;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
+}
+
+/* hand tracking overlay & hidden webcam feed (promoted into top-layer via popover="manual") */
+.hand-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
   pointer-events: none;
-  z-index: 60;
+  z-index: 2147483647;
+}
+.hand-overlay::backdrop {
+  display: none;
 }
 .hand-cam {
   position: fixed;

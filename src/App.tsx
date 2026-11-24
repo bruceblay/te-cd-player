@@ -1,12 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Deck } from './engine/deck'
-import { completeSpotifyLogin, spotifyToken } from './sources/spotifyAuth'
+import { completeSpotifyLogin, fetchSpotifyProfile, spotifyToken, type SpotifyProfile } from './sources/spotifyAuth'
 import { Device } from './ui/Device'
 import { BurnDialog, type BurnDialogHandle } from './ui/BurnDialog'
 import { Mixer, type MixerState } from './engine/mixer'
 import { Sidekick } from './ui/Sidekick'
 import { Cable, type End } from './ui/Cable'
-import { SideDrawer, readHandStyle, readLayout, saveHandStyle, saveLayout, type LayoutConfig } from './ui/SideDrawer'
+import { Studio3D } from './scene3d/Studio3D'
+import {
+  SideDrawer,
+  readHandStyle,
+  readLayout,
+  readViewMode,
+  saveHandStyle,
+  saveLayout,
+  saveViewMode,
+  type LayoutConfig,
+  type ViewMode,
+} from './ui/SideDrawer'
 import {
   DeskProps,
   clearGearOverlap,
@@ -81,6 +92,10 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const drawerOpenRef = useRef(false)
   drawerOpenRef.current = drawerOpen
+  const [view, setView] = useState<ViewMode>(readViewMode)
+  useEffect(() => {
+    saveViewMode(view)
+  }, [view])
   const [handsOn, setHandsOn] = useState(false)
   const [handStyle, setHandStyle] = useState<HandStyle>(readHandStyle)
   const [handStatus, setHandStatus] = useState<HandStatus>({ state: 'off', hands: 0 })
@@ -226,23 +241,41 @@ export default function App() {
   const burn = useRef<(BurnDialogHandle | null)[]>([])
   const openLid = (i: number) => {
     active.current = i
-    sessionStorage.setItem('bc1.spotify.deck', String(i))
     burn.current[i]?.open()
   }
   const [spotifyIn, setSpotifyIn] = useState(false)
+  const [spotifyProfile, setSpotifyProfile] = useState<SpotifyProfile | null>(null)
 
   useEffect(() => {
     decks.forEach((deck, i) => deck.setMount(hiddenMount.current[i]))
   }, [decks])
 
   useEffect(() => {
-    void spotifyToken().then((t) => setSpotifyIn(!!t))
-    void completeSpotifyLogin().then((pending) => {
-      if (pending) {
-        setSpotifyIn(true)
-        void decks[sessionStorage.getItem('bc1.spotify.deck') === '1' ? 1 : 0].loadDisc(pending)
+    let alive = true
+    const initSpotify = async () => {
+      const res = await completeSpotifyLogin()
+      if (!alive) return
+      const token = res.ok ? await spotifyToken() : await spotifyToken()
+      if (!alive) return
+      const signedIn = !!token
+      setSpotifyIn(signedIn)
+      if (signedIn) {
+        void fetchSpotifyProfile().then((p) => alive && setSpotifyProfile(p))
       }
-    })
+      if (res.handled && res.pending) {
+        const idx = res.pending.deckIndex === 1 && deckCount === 2 ? 1 : 0
+        active.current = idx
+        burn.current[idx]?.open({
+          draft: res.pending.draft,
+          pendingUrl: res.ok ? res.pending.pendingUrl : undefined,
+          error: res.ok ? undefined : res.error,
+        })
+      }
+    }
+    void initSpotify()
+    return () => {
+      alive = false
+    }
   }, [])
 
   // keyboard: mirrors the panel
@@ -319,11 +352,13 @@ export default function App() {
   }, [decks])
 
   return (
-    <main className="page">
+    <main className={`page ${view === '3d' ? 'page-3d' : ''}`}>
       <SideDrawer
         open={drawerOpen}
         onOpen={() => setDrawerOpen(true)}
         onClose={() => setDrawerOpen(false)}
+        view={view}
+        onView={setView}
         layout={layout}
         onLayout={updateLayout}
         handsOn={handsOn}
@@ -337,32 +372,53 @@ export default function App() {
         onToggleProp={toggleProp}
         onScatterProps={() => updateProps((cur) => scatterProps(cur))}
         onClearProps={() => setProps([])}
+        spotifyIn={spotifyIn}
+        spotifyProfile={spotifyProfile}
+        onSpotifyOut={() => {
+          setSpotifyIn(false)
+          setSpotifyProfile(null)
+        }}
       />
-      {propsOn && props && <DeskProps items={props} decks={decks} onChange={updateProps} />}
+      {view === '2d' && propsOn && props && <DeskProps items={props} decks={decks} onChange={updateProps} />}
       <HandTracker enabled={handsOn} style={handStyle} onStatus={setHandStatus} />
-      {/* the deck keeps its place in the tree either way, so a playing video isn't torn down */}
-      <div ref={rigRef} className={mixerOn ? (deckCount === 1 ? 'rig one-deck' : 'rig') : 'solo'}>
-        {decks.map((deck, i) => i < deckCount && (
-          <Device key={i} deck={deck} index={i} output={outputs[i]} onSelect={() => { active.current = i }} onOpenLid={() => openLid(i)} />
-        ))}
-        {mixerOn && ms && <Sidekick mixer={getMixer()} s={ms} />}
-        {mixerOn && cables.slice(0, deckCount).map((cable, i) => {
-          const preferred = defaultCables[i].b
-          const otherB = deckCount === 2 ? cables[1 - i].b : null
-          const freeB = Object.keys(inputs)
-            .filter((id) => id !== otherB)
-            .sort((x, y) => (x === preferred ? -1 : y === preferred ? 1 : 0))
-          return (
-            <Cable key={i} {...cable}
-              accepts={{ a: [outputs[i]], b: freeB }}
-              onChange={(end, jack) => setCables(current => {
-                if (end === 'b' && jack && deckCount === 2 && current[1 - i].b === jack) return current
-                return current.map((patch, j) => j === i ? { ...patch, [end]: jack } : patch)
-              })}
-            />
-          )
-        })}
-      </div>
+      {view === '3d' ? (
+        <Studio3D
+          decks={decks}
+          mixer={mixerOn ? getMixer() : null}
+          deckCount={deckCount}
+          mixerOn={mixerOn}
+          cables={cables}
+          onSelectDeck={(i) => {
+            active.current = i
+          }}
+          onOpenLid={openLid}
+        />
+      ) : (
+        /* the deck keeps its place in the tree either way, so a playing video isn't torn down */
+        <div ref={rigRef} className={mixerOn ? (deckCount === 1 ? 'rig one-deck' : 'rig') : 'solo'}>
+          {decks.map((deck, i) => i < deckCount && (
+            <Device key={i} deck={deck} index={i} output={outputs[i]} onSelect={() => { active.current = i }} onOpenLid={() => openLid(i)} />
+          ))}
+          {mixerOn && ms && <Sidekick mixer={getMixer()} s={ms} />}
+          {mixerOn && cables.slice(0, deckCount).map((cable, i) => {
+            const preferred = defaultCables[i].b
+            const otherB = deckCount === 2 ? cables[1 - i].b : null
+            const freeB = Object.keys(inputs)
+              .filter((id) => id !== otherB)
+              .sort((x, y) => (x === preferred ? -1 : y === preferred ? 1 : 0))
+            return (
+              <Cable key={i} {...cable}
+                accent={i === 0 ? '#ff5a1f' : '#6c6d70'}
+                accepts={{ a: [outputs[i]], b: freeB }}
+                onChange={(end, jack) => setCables(current => {
+                  if (end === 'b' && jack && deckCount === 2 && current[1 - i].b === jack) return current
+                  return current.map((patch, j) => j === i ? { ...patch, [end]: jack } : patch)
+                })}
+              />
+            )
+          })}
+        </div>
+      )}
       {decks.map((deck, i) => <div key={i} className="offscreen" ref={el => { hiddenMount.current[i] = el; deck.setMount(el) }} aria-hidden />)}
 
       <dialog ref={help} className="lid help-dialog" onClick={(e) => e.target === help.current && help.current?.close()}>
@@ -381,14 +437,30 @@ export default function App() {
           <div><dt>enter / esc</dt><dd>enter / cancel</dd></div>
           <div><dt>q w e</dt><dd>cue 1–3 (hold clears)</dd></div>
           <div><dt>b</dt><dd>bluetooth (hold pairs)</dd></div>
-          <div><dt>o  p</dt><dd>burn disc, power</dd></div>
+          <div><dt>o  p</dt><dd>make disc, power</dd></div>
           <div><dt>m</dt><dd>solo / two-deck rig</dd></div>
           <div className="wide"><dt>enter +</dt><dd>next: repeat · play: sync / tap · stop: tap / sync off · prev: rip · bt: broadcast</dd></div>
           <div className="wide"><dt>power off + play</dt><dd>battery check on the VU</dd></div>
         </dl>
       </dialog>
 
-      {decks.map((deck, i) => <BurnDialog key={i} ref={el => { burn.current[i] = el }} deck={deck} mount={() => hiddenMount.current[i]} spotifyIn={spotifyIn} onSpotifyOut={() => setSpotifyIn(false)} />)}
+      {decks.map((deck, i) => (
+        <BurnDialog
+          key={i}
+          ref={(el) => {
+            burn.current[i] = el
+          }}
+          deck={deck}
+          deckIndex={i}
+          mount={() => hiddenMount.current[i]}
+          spotifyIn={spotifyIn}
+          spotifyProfile={spotifyProfile}
+          onSpotifyOut={() => {
+            setSpotifyIn(false)
+            setSpotifyProfile(null)
+          }}
+        />
+      ))}
     </main>
   )
 }
