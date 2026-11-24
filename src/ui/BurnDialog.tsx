@@ -129,7 +129,7 @@ export const BurnDialog = forwardRef<
       const m = mount()
       if (builtIn && !m) return
       const disc = builtIn
-        ? { title: builtIn.title, color: DISC_COLORS[0], items: (await resolveLink(builtIn.url, m!)).items }
+        ? { title: builtIn.title, color: builtIn.color, items: (await resolveLink(builtIn.url, m!)).items }
         : await openDisc(id)
       if (token !== session.current) return
       setDraft(disc)
