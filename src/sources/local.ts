@@ -90,6 +90,8 @@ export class LocalSource implements Source {
       if (this.url) URL.revokeObjectURL(this.url)
       this.url = typeof f === 'string' ? '' : URL.createObjectURL(f)
       const rate = this.el.playbackRate
+      // bundled tracks stream as they play; a picked file is already on this machine
+      this.el.preload = this.url ? 'auto' : 'metadata'
       this.el.src = this.url || (f as string)
       await new Promise<void>((r) => {
         this.el.addEventListener('loadedmetadata', () => r(), { once: true })

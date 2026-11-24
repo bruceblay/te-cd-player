@@ -36,6 +36,7 @@ import type { HandStyle } from './ui/handRender'
 import type { Jack } from './engine/mixer'
 import { buildControls, midiLearn } from './engine/midiLearn'
 import { MidiLearnLayer } from './ui/MidiLearn'
+import { BUILT_IN_DISCS, openBuiltIn } from './engine/builtInDiscs'
 
 
 const decks = [new Deck(), new Deck()] as const
@@ -59,6 +60,17 @@ if (OG) {
     tracks: [t('varispeed', 201), t('cue 1 2 3', 168), t('jog', 192), t('filter', 225), t('delay', 239), t('tape', 184), t('loop', 210), t('tremolo', 196), t('siren', 172)],
   })
 }
+// the left deck starts with Untitled in it, unless something got there first
+let startDiscTried = OG
+function loadStartDisc(mount: HTMLElement | null) {
+  const disc = BUILT_IN_DISCS.find((d) => d.id === 'builtin:untitled')
+  if (startDiscTried || !mount || !disc) return
+  startDiscTried = true
+  void openBuiltIn(disc, mount)
+    .then((c) => (decks[0].compilation || decks[0].getState().disc ? undefined : decks[0].loadDisc(c)))
+    .catch(() => {})
+}
+
 const outputs = ['bc1-out', 'bc2-out']
 const inputs: Record<string, Jack> = { 'sk-ch1': 0, 'sk-ch2': 1, 'sk-aux': 'aux' }
 const defaultCables = outputs.map((a, i) => ({ a, b: `sk-ch${i + 1}` }))
@@ -285,6 +297,7 @@ export default function App() {
 
   useEffect(() => {
     decks.forEach((deck, i) => deck.setMount(hiddenMount.current[i]))
+    loadStartDisc(hiddenMount.current[0])
   }, [decks])
 
   useEffect(() => {
