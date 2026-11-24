@@ -137,6 +137,21 @@ export default function App() {
   useEffect(() => {
     if (props !== null) saveProps(props)
   }, [props])
+  // After a rotation or resize (and on load, for positions saved on another screen) pull back any desk
+  // items the gear now covers or the viewport now clips
+  useEffect(() => {
+    let t = 0
+    const refit = () => {
+      clearTimeout(t)
+      t = window.setTimeout(() => setProps((cur) => (cur ? clearGearOverlap(cur) : cur)), 250)
+    }
+    refit()
+    window.addEventListener('resize', refit)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('resize', refit)
+    }
+  }, [view])
   const updateProps = (updater: (cur: PlacedProp[]) => PlacedProp[]) => {
     setProps((cur) => updater(cur ?? []))
   }
@@ -444,8 +459,8 @@ export default function App() {
       <dialog ref={help} className="lid help-dialog" onClick={(e) => e.target === help.current && help.current?.close()}>
         <header className="lid-head">
           <h2>keys</h2>
-          <button type="button" className="lid-close" onClick={() => help.current?.close()}>
-            esc
+          <button type="button" className="lid-close" aria-label="close" onClick={() => help.current?.close()}>
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" /></svg>
           </button>
         </header>
         <dl className="help">

@@ -1147,13 +1147,6 @@ button {
     inset 0 calc(var(--u) * 0.5) 0 rgb(255 190 150 / 0.4);
 }
 
-.sk-jack {
-  bottom: 0;
-  top: auto !important;
-  border-radius: calc(var(--u) * 8) calc(var(--u) * 8) 0 0;
-  background: #1a1a1a;
-}
-
 /* LCD: orange pixels on black */
 .sk-lcd {
   border-radius: calc(var(--u) * 0.8);
@@ -1251,7 +1244,7 @@ button {
 .lid-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
 }
 .lid-head h2 {
   margin: 0;
@@ -1261,10 +1254,20 @@ button {
 }
 .lid-close {
   all: unset;
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -8px -8px -8px 0;
   color: #9a978f;
   cursor: pointer;
+}
+.lid-close svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 .lid-close:hover {
   color: var(--ink);
@@ -1574,7 +1577,7 @@ button {
     -1px 0 0 rgb(0 0 0 / 0.08),
     -18px 0 40px -16px rgb(24 22 18 / 0.3);
   overflow-y: auto;
-  transform: translateX(100%);
+  transform: translateX(calc(100% + 60px));
   transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .drawer.open {
@@ -1838,7 +1841,7 @@ button {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
-  will-change: left, top;
+  -webkit-tap-highlight-color: transparent;
   transition: filter 160ms ease;
   filter:
     drop-shadow(1px 3px 3px rgb(48 40 30 / 0.24))
@@ -1925,6 +1928,21 @@ button {
 .desk-prop-btn:hover {
   background: var(--orange);
 }
+.desk-prop-btn svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* touch screens: no rotate handle, just move and remove */
+@media (pointer: coarse) {
+  .desk-prop-rotate,
+  .fine-only {
+    display: none;
+  }
+}
 
 /* 3D studio scene & floating camera preset pill */
 .page-3d {
@@ -2009,15 +2027,6 @@ button {
   height: 1px;
   opacity: 0;
   pointer-events: none;
-}
-
-@supports (transform: scale(tan(atan2(100cqw, 740px)))) {
-  .device {
-    transform: scale(tan(atan2(100cqw, 740px)));
-  }
-  .sidekick {
-    transform: scale(tan(atan2(100cqw, 404px)));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -257,8 +257,8 @@ export const BurnDialog = forwardRef<
             ))}
           </select>
         )}
-        <button type="button" className="lid-close" onClick={() => dlg.current?.close()}>
-          esc
+        <button type="button" className="lid-close" aria-label="close" onClick={() => dlg.current?.close()}>
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" /></svg>
         </button>
       </header>
 

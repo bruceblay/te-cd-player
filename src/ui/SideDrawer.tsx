@@ -151,8 +151,8 @@ export function SideDrawer({
         aria-hidden={!open}
       >
         <header className="drawer-head">
-          <button type="button" className="lid-close" tabIndex={open ? 0 : -1} onClick={onClose}>
-            esc
+          <button type="button" className="lid-close" aria-label="close" tabIndex={open ? 0 : -1} onClick={onClose}>
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" /></svg>
           </button>
         </header>
 
@@ -357,7 +357,7 @@ export function SideDrawer({
                     )
                   })}
                 </div>
-                <p className="drawer-note">drag to move · drag ↻ or scroll to rotate · drop on a spinning CD</p>
+                <p className="drawer-note">drag to move<span className="fine-only"> · drag ↻ or scroll to rotate</span> · drop on a spinning CD</p>
               </>
             )}
           </section>

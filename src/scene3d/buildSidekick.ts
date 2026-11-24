@@ -340,23 +340,21 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
 
   // Sculpted bright TE orange circular thumb puck (slides left=OFF, right=ON inside the pill slot)
   const pwrPuckGroup = new THREE.Group()
-  const puckR = 5.0 * UNIT
-  const puckBase = new THREE.Mesh(
-    trackGeo(new THREE.CylinderGeometry(puckR * 0.96, puckR, 0.2, 32)),
-    orangeMat,
-  )
-  puckBase.position.y = 0.1
+  // low round button sitting just inside the capsule, with a softly rolled top edge
+  const puckR = 4.7 * UNIT
+  const puckProfile = [
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(puckR, 0),
+    new THREE.Vector2(puckR, 0.07),
+    new THREE.Vector2(puckR * 0.97, 0.105),
+    new THREE.Vector2(puckR * 0.9, 0.125),
+    new THREE.Vector2(puckR * 0.78, 0.135),
+    new THREE.Vector2(0, 0.14),
+  ]
+  const puckBase = new THREE.Mesh(trackGeo(new THREE.LatheGeometry(puckProfile, 40)), orangeMat)
   puckBase.castShadow = true
   puckBase.receiveShadow = true
   pwrPuckGroup.add(puckBase)
-
-  const puckDome = new THREE.Mesh(
-    trackGeo(new THREE.CylinderGeometry(puckR * 0.84, puckR * 0.96, 0.04, 32)),
-    orangeMat,
-  )
-  puckDome.position.y = 0.22
-  puckDome.castShadow = true
-  pwrPuckGroup.add(puckDome)
 
   const pwrOffX = dx(168.5)
   const pwrOnX = dx(179.5)

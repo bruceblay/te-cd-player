@@ -217,7 +217,7 @@ export function Device({
           x={COL[3]}
           y={387}
           size={34}
-          cap={22}
+          cap={17}
           className="vari"
           value={s.varispeed}
           min={50}

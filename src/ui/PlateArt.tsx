@@ -92,7 +92,6 @@ export const PlateArt = memo(function PlateArt() {
       <rect x={27} y={0} width={12} height={1.6} fill="#2b2c2e" />
       <rect x={112} y={0} width={12} height={1.6} fill="#2b2c2e" />
       <rect x={229} y={0} width={14} height={1.6} fill="#2b2c2e" />
-      <path d="M273 511 A8 8 0 0 1 289 511 Z" fill="#2b2c2e" />
     </svg>
   )
 })

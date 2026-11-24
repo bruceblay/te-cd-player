@@ -115,6 +115,17 @@ export function saveProps(props: PlacedProp[]) {
   }
 }
 
+const EDGE = 8
+
+/** half-extents of a w×h box rotated by `rotDeg` */
+function extents(halfW: number, halfH: number, rotDeg: number) {
+  const a = (rotDeg * Math.PI) / 180
+  return {
+    rx: Math.abs(Math.cos(a)) * halfW + Math.abs(Math.sin(a)) * halfH,
+    ry: Math.abs(Math.sin(a)) * halfW + Math.abs(Math.cos(a)) * halfH,
+  }
+}
+
 /** Measure the live gear rect (including cable clearance above it) so props never spawn on top of hardware. */
 function gearBounds() {
   const el = document.querySelector<HTMLElement>('.rig, .solo')
@@ -142,9 +153,9 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
   const halfW = sizePx * 0.5
   const halfH = Math.max(12, sizePx * def.aspect * 0.5)
   const rad = Math.min(sizePx * 0.5, Math.hypot(halfW, halfH))
-  // Keep small items fully inside the viewport; allow large props to tuck naturally toward the frame edge if margins are tight
-  const minEdgeX = Math.min(28, halfW * 0.5)
-  const minEdgeY = Math.min(28, halfH * 0.5)
+  // Keep every item fully inside the viewport (small phone screens clip anything tucked against the edge)
+  const minEdgeX = Math.min(halfW, halfH) + EDGE
+  const minEdgeY = Math.min(halfW, halfH) + EDGE
   const face = near ? near.face : rollFace(id)
 
   const overlapsExisting = (px: number, py: number) =>
@@ -243,7 +254,8 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
     const inGear = hitsGear(px, py, rot)
     const inMenu = hitsMenu(px, py)
     const inProp = overlapsExisting(px, py)
-    const offscreen = px < 0 || px > vw || py < 0 || py > vh
+    const { rx: erx, ry: ery } = extents(halfW, halfH, rot)
+    const offscreen = px - erx < EDGE || px + erx > vw - EDGE || py - ery < EDGE || py + ery > vh - EDGE
     if (!inGear && !inMenu && !inProp && !offscreen && !near) {
       return { id, x: (px / vw) * 100, y: (py / vh) * 100, rot, ...(face !== undefined ? { face } : {}) }
     }
@@ -257,25 +269,23 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
     : { id, x: 8, y: 12, rot: 0, ...(face !== undefined ? { face } : {}) }
 }
 
-/** Check whether a placed prop currently intersects the live gear bounds. */
-function propOverlapsGear(p: PlacedProp, gear: NonNullable<ReturnType<typeof gearBounds>>, ppm: number, vw: number, vh: number) {
+/** Check whether a placed prop sits under the live gear or hangs off the viewport. */
+function propMisplaced(p: PlacedProp, gear: ReturnType<typeof gearBounds>, ppm: number, vw: number, vh: number) {
   const def = PROP_MAP.get(p.id)
   if (!def) return false
   const sizePx = def.mm * ppm
-  const halfW = sizePx * 0.52
-  const halfH = Math.max(14, sizePx * def.aspect * 0.52)
-  const a = (p.rot * Math.PI) / 180
-  const rx = Math.abs(Math.cos(a)) * halfW + Math.abs(Math.sin(a)) * halfH
-  const ry = Math.abs(Math.sin(a)) * halfW + Math.abs(Math.cos(a)) * halfH
+  const { rx, ry } = extents(sizePx * 0.5, Math.max(12, sizePx * def.aspect * 0.5), p.rot)
   const px = (p.x / 100) * vw
   const py = (p.y / 100) * vh
-  return px + rx > gear.left && px - rx < gear.right && py + ry > gear.top && py - ry < gear.bottom
+  if (px - rx < 0 || px + rx > vw || py - ry < 0 || py + ry > vh) return true
+  if (!gear) return false
+  return px + rx * 1.04 > gear.left && px - rx * 1.04 < gear.right && py + ry * 1.04 > gear.top && py - ry * 1.04 < gear.bottom
 }
 
-/** Move any props that would be covered by the gear after a layout switch to the nearest free desk spot. */
+/** Move any props covered by the gear or pushed off screen (layout switch, rotation, resize) to the nearest free spot. */
 export function clearGearOverlap(props: PlacedProp[]): PlacedProp[] {
+  if (!props.length || !document.querySelector('.rig, .solo')) return props
   const gear = gearBounds()
-  if (!gear || !props.length) return props
   const vw = Math.max(320, window.innerWidth)
   const vh = Math.max(320, window.innerHeight)
   const ppm = measurePxPerMm()
@@ -283,7 +293,7 @@ export function clearGearOverlap(props: PlacedProp[]): PlacedProp[] {
   const keep: PlacedProp[] = []
   const blocked = new Set<PropId>()
   for (const p of props) {
-    if (propOverlapsGear(p, gear, ppm, vw, vh)) blocked.add(p.id)
+    if (propMisplaced(p, gear, ppm, vw, vh)) blocked.add(p.id)
     else keep.push(p)
   }
   if (!blocked.size) return props
@@ -743,7 +753,10 @@ export function DeskProps({
                 setMode('rotate')
               }}
             >
-              ↻
+              <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden>
+                <path d="M9.6 6.4A3.7 3.7 0 1 1 8.4 3.2" />
+                <path d="M8.9 1.2v2.6H6.3" />
+              </svg>
             </button>
             <button
               type="button"
@@ -755,7 +768,9 @@ export function DeskProps({
                 remove(prop.id)
               }}
             >
-              ×
+              <svg viewBox="0 0 12 12" width="9" height="9" aria-hidden>
+                <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+              </svg>
             </button>
           </div>
         )

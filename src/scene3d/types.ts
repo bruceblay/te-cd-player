@@ -73,7 +73,8 @@ export function tagControl(obj: THREE.Object3D, action: ControlAction) {
 export function createRoundedTopPlane(w: number, d: number, r: number, curveSegments = 8): THREE.BufferGeometry {
   const hw = w / 2
   const hd = d / 2
-  const cr = Math.min(r, hw * 0.49, hd * 0.49)
+  // up to a full semicircle on the short side, so pills come out as true capsules
+  const cr = Math.min(r, hw * 0.995, hd * 0.995)
   const shape = new THREE.Shape()
   shape.moveTo(-hw + cr, -hd)
   shape.lineTo(hw - cr, -hd)

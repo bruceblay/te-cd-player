@@ -46,20 +46,28 @@ function layoutPositions(deckCount: 1 | 2, mixerOn: boolean) {
   }
 }
 
+/** camera distance that fits the whole rig in a viewport of this aspect */
+function fitDistance(deckCount: 1 | 2, mixerOn: boolean, aspect: number) {
+  const { rigWidth } = layoutPositions(deckCount, mixerOn)
+  const tanHalfV = Math.tan(THREE.MathUtils.degToRad(32) / 2)
+  const tanHalfH = tanHalfV * aspect
+  // portrait screens only have width to spare, so frame tighter
+  const margin = aspect < 1 ? 0.54 : 0.62
+  const distForW = (rigWidth * margin) / tanHalfH
+  // phones in landscape are short: leave room for the preset bar below the rig
+  const distForD = (BC1_D * (aspect > 2 ? 0.8 : 0.62)) / tanHalfV
+  return Math.max(distForW, distForD, 36)
+}
+
 function presetPose(
   preset: CameraPreset,
   deckCount: 1 | 2,
   mixerOn: boolean,
   aspect: number,
 ): { pos: THREE.Vector3; target: THREE.Vector3 } {
-  const { skX, skZ, rigWidth } = layoutPositions(deckCount, mixerOn)
-  const fovRad = THREE.MathUtils.degToRad(32)
-  const tanHalfV = Math.tan(fovRad / 2)
-  const tanHalfH = tanHalfV * Math.max(0.7, aspect)
-
-  const distForW = (rigWidth * 0.62) / tanHalfH
-  const distForD = (BC1_D * 0.62) / tanHalfV
-  const baseDist = Math.max(distForW, distForD, 36)
+  const { skX, skZ } = layoutPositions(deckCount, mixerOn)
+  const baseDist = fitDistance(deckCount, mixerOn, aspect)
+  const portrait = aspect < 1
 
   if (preset === 'sidekick' && mixerOn) {
     return {
@@ -81,11 +89,14 @@ function presetPose(
       target: new THREE.Vector3(0, 0.8, 0),
     }
   }
-  // 'desk' hero POV
+  // 'desk' hero POV (steeper in portrait so the rig's depth fills more height)
   const d = baseDist * 1.03
   return {
-    pos: new THREE.Vector3(d * 0.14, d * 0.72, d * 0.68),
-    target: new THREE.Vector3(0, 0.9, 0.4),
+    pos: portrait
+      ? new THREE.Vector3(d * 0.08, d * 0.84, d * 0.52)
+      : new THREE.Vector3(d * 0.14, d * 0.72, d * 0.68),
+    // short landscape screens: nudge the rig up, clear of the preset bar
+    target: new THREE.Vector3(0, 0.9, aspect > 2 ? 2.6 : 0.4),
   }
 }
 
@@ -165,10 +176,14 @@ export function Studio3D({
 
   const cameraGoalRef = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null)
   const aspectRef = useRef(16 / 9)
+  const presetRef = useRef<CameraPreset>('desk')
+  presetRef.current = preset
+  const applyDepthRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const activePreset: CameraPreset = preset === 'sidekick' && !mixerOn ? 'desk' : preset
     if (activePreset !== preset) setPreset(activePreset)
+    applyDepthRef.current()
     cameraGoalRef.current = presetPose(activePreset, deckCount, mixerOn, aspectRef.current)
   }, [preset, deckCount, mixerOn])
 
@@ -185,6 +200,16 @@ export function Studio3D({
     scene.fog = new THREE.Fog('#dfdcd4', 95, 220)
 
     const camera = new THREE.PerspectiveCamera(32, aspectRef.current, 2.0, 180)
+    // far plane, fog and zoom-out limit follow the fit distance so narrow screens still see the rig
+    const applyDepth = () => {
+      const base = fitDistance(propsRef.current.deckCount, propsRef.current.mixerOn, aspectRef.current)
+      camera.far = Math.max(180, base + 170)
+      camera.updateProjectionMatrix()
+      const fog = scene.fog as THREE.Fog
+      fog.near = Math.max(95, base + 37)
+      fog.far = Math.max(220, base + 162)
+      controls.maxDistance = Math.max(95, base * 1.4)
+    }
     const initPose = presetPose('desk', propsRef.current.deckCount, propsRef.current.mixerOn, aspectRef.current)
     camera.position.copy(initPose.pos)
 
@@ -243,6 +268,13 @@ export function Studio3D({
     )
     floor.receiveShadow = true
     scene.add(floor)
+    // matte surround in the floor's edge tone, so zoomed-out views never show its border
+    const surround = new THREE.Mesh(
+      new THREE.RingGeometry(150, 900, 4, 1).rotateX(-Math.PI / 2).rotateY(Math.PI / 4),
+      new THREE.MeshStandardMaterial({ color: '#d8d4cb', roughness: 0.92, metalness: 0, envMapIntensity: 0.18 }),
+    )
+    surround.position.y = -0.02
+    scene.add(surround)
 
     // OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -255,6 +287,8 @@ export function Studio3D({
     controls.maxDistance = 95
     controls.panSpeed = 0.85
     controls.rotateSpeed = 0.75
+    applyDepth()
+    applyDepthRef.current = applyDepth
     controls.update()
 
     const cancelGoal = () => {
@@ -547,10 +581,16 @@ export function Studio3D({
     const ro = new ResizeObserver(() => {
       const w = host.clientWidth || window.innerWidth
       const h = host.clientHeight || window.innerHeight
+      const prev = aspectRef.current
       aspectRef.current = w / Math.max(1, h)
       camera.aspect = aspectRef.current
       camera.updateProjectionMatrix()
       renderer.setSize(w, h)
+      applyDepth()
+      // reframe after a rotation or big resize
+      if (Math.abs(Math.log(aspectRef.current / prev)) > 0.15) {
+        cameraGoalRef.current = presetPose(presetRef.current, propsRef.current.deckCount, propsRef.current.mixerOn, aspectRef.current)
+      }
     })
     ro.observe(host)
 

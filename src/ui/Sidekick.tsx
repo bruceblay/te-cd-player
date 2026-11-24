@@ -115,7 +115,6 @@ export function Sidekick({ mixer, s }: { mixer: Mixer; s: MixerState }) {
         <Key x={RIGHT} y={495} w={37} h={18} className={`sk-key light ${s.selectHeld ? 'lit' : ''}`} title="select (click to latch, or hold)" onDown={() => mixer.selectDown()} onUp={() => mixer.selectUp()}>
           <span className="sk-legend">SELECT</span>
         </Key>
-        <span className="sk-jack" style={pos(159, 546, 16, 8)} title="cue / phones" />
       </div>
     </div>
   )
