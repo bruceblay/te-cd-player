@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { DISC_COLORS, resolveFiles, resolveLink, type Compilation, type Item } from '../engine/compilation'
 import { BUILT_IN_DISCS, openBuiltIn } from '../engine/builtInDiscs'
-import { listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
+import { deleteDisc, listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
 import type { Deck } from '../engine/deck'
 import { parseSpotify } from '../sources/spotify'
 import {
@@ -121,6 +121,28 @@ export const BurnDialog = forwardRef<
     }
   }
 
+  // deleting asks twice: the first click arms it for this disc
+  const [deleteArmed, setDeleteArmed] = useState<string | null>(null)
+  const remove = async () => {
+    const id = draft.savedId
+    if (!id) return
+    if (deleteArmed !== id) return setDeleteArmed(id)
+    const token = session.current
+    setDeleteArmed(null)
+    setProblem(null)
+    try {
+      await deleteDisc(id)
+      if (token !== session.current) return
+      // keep the tracks on screen, just no longer tied to a saved copy
+      setDraft((d) => (d.savedId === id ? { ...d, savedId: undefined } : d))
+      setSavedSnapshot(null)
+      const rows = await listDiscs()
+      if (token === session.current) setSaved(rows)
+    } catch {
+      if (token === session.current) setProblem('couldn’t delete this disc')
+    }
+  }
+
   const restore = async (id: string) => {
     const token = session.current
     setBusy(true)
@@ -193,6 +215,7 @@ export const BurnDialog = forwardRef<
       setBusy(false)
       setSaving(false)
       setSavedSnapshot(null)
+      setDeleteArmed(null)
       setSaved([])
       void listDiscs()
         .then((rows) => {
@@ -391,6 +414,11 @@ export const BurnDialog = forwardRef<
           {draft.items.length > 0 && (
             <button type="button" className="lid-text muted" onClick={() => setDraft((d) => ({ ...d, savedId: undefined, items: [] }))}>
               clear
+            </button>
+          )}
+          {draft.savedId && saved.some((d) => d.id === draft.savedId) && (
+            <button type="button" className="lid-text muted" disabled={saving || busy} onClick={() => void remove()}>
+              {deleteArmed === draft.savedId ? 'really delete?' : 'delete'}
             </button>
           )}
           {deck.compilation && (

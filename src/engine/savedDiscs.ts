@@ -62,3 +62,17 @@ export async function openDisc(id: string): Promise<SavedDisc> {
     db.close()
   }
 }
+
+export async function deleteDisc(id: string): Promise<void> {
+  const db = await database()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('discs', 'readwrite')
+      tx.oncomplete = () => resolve()
+      tx.onabort = () => reject(tx.error)
+      tx.objectStore('discs').delete(id)
+    })
+  } finally {
+    db.close()
+  }
+}
