@@ -150,6 +150,11 @@ export class Deck {
   /* ---------------- store plumbing ---------------- */
 
   getState = () => this.s
+
+  /** show a disc on a powered, idle deck without loading any audio (for the link-preview render) */
+  showcase(disc: DiscInfo) {
+    this.set({ power: 'on', disc, caps: null, track: 0, position: 0, duration: disc.tracks[0]?.duration ?? 0, transport: 'stopped', message: null })
+  }
   subscribe = (fn: () => void) => {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)

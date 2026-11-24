@@ -37,6 +37,26 @@ import type { Jack } from './engine/mixer'
 
 
 const decks = [new Deck(), new Deck()] as const
+
+/** ?og renders the gear alone, with demo discs, for the 1200x630 link-preview image */
+const OG = new URLSearchParams(location.search).has('og')
+if (OG) {
+  const t = (title: string, duration: number) => ({ title, duration })
+  decks[0].showcase({
+    id: 'og-a',
+    kind: 'mix',
+    title: 'cds.bruceblay.com',
+    color: '#22468c',
+    tracks: [t('burn a disc', 214), t('youtube', 187), t('soundcloud', 242), t('spotify', 198), t('local files', 231), t('two decks', 176), t('k.o. sidekick', 263), t('patch cables', 205)],
+  })
+  decks[1].showcase({
+    id: 'og-b',
+    kind: 'mix',
+    title: 'side b',
+    color: '#ff5a1f',
+    tracks: [t('varispeed', 201), t('cue 1 2 3', 168), t('jog', 192), t('filter', 225), t('delay', 239), t('tape', 184), t('loop', 210), t('tremolo', 196), t('siren', 172)],
+  })
+}
 const outputs = ['bc1-out', 'bc2-out']
 const inputs: Record<string, Jack> = { 'sk-ch1': 0, 'sk-ch2': 1, 'sk-aux': 'aux' }
 const defaultCables = outputs.map((a, i) => ({ a, b: `sk-ch${i + 1}` }))
@@ -353,7 +373,7 @@ export default function App() {
 
   return (
     <main className={`page ${view === '3d' ? 'page-3d' : ''}`}>
-      <SideDrawer
+      {!OG && <SideDrawer
         open={drawerOpen}
         onOpen={() => setDrawerOpen(true)}
         onClose={() => setDrawerOpen(false)}
@@ -378,10 +398,10 @@ export default function App() {
           setSpotifyIn(false)
           setSpotifyProfile(null)
         }}
-      />
-      {view === '2d' && propsOn && props && <DeskProps items={props} decks={decks} onChange={updateProps} />}
-      <HandTracker enabled={handsOn} style={handStyle} onStatus={setHandStatus} />
-      {view === '3d' ? (
+      />}
+      {!OG && view === '2d' && propsOn && props && <DeskProps items={props} decks={decks} onChange={updateProps} />}
+      <HandTracker enabled={handsOn && !OG} style={handStyle} onStatus={setHandStatus} />
+      {view === '3d' && !OG ? (
         <Studio3D
           decks={decks}
           mixer={mixerOn ? getMixer() : null}
