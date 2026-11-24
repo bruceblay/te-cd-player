@@ -172,7 +172,7 @@ export class SpotifySdkSource implements Source {
     if (!this.tracks.length) throw new Error('empty')
     await spotifySdk()
     this.player = new window.Spotify.Player({
-      name: 'te-cd-player BC-1',
+      name: 'BC-1 Mixer',
       getOAuthToken: (done: (t: string) => void) => void spotifyToken().then((t) => t && done(t)),
       volume: this.volume,
     })
