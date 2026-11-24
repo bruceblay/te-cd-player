@@ -60,15 +60,25 @@ if (OG) {
     tracks: [t('varispeed', 201), t('cue 1 2 3', 168), t('jog', 192), t('filter', 225), t('delay', 239), t('tape', 184), t('loop', 210), t('tremolo', 196), t('siren', 172)],
   })
 }
-// the left deck starts with Untitled in it, unless something got there first
-let startDiscTried = OG
-function loadStartDisc(mount: HTMLElement | null) {
-  const disc = BUILT_IN_DISCS.find((d) => d.id === 'builtin:untitled')
-  if (startDiscTried || !mount || !disc) return
-  startDiscTried = true
-  void openBuiltIn(disc, mount)
-    .then((c) => (decks[0].compilation || decks[0].getState().disc ? undefined : decks[0].loadDisc(c)))
-    .catch(() => {})
+// the decks start with Untitled and Field Recordings in them, unless something got there first
+const START_DISCS = ['builtin:untitled', 'builtin:field-recordings']
+let startDiscsTried = OG
+function loadStartDiscs(mounts: (HTMLElement | null)[], twoDecks: boolean) {
+  if (startDiscsTried) return
+  startDiscsTried = true
+  START_DISCS.forEach((id, i) => {
+    const disc = BUILT_IN_DISCS.find((d) => d.id === id)
+    const deck = decks[i]
+    if (!disc || !mounts[i]) return
+    void openBuiltIn(disc, mounts[i]!)
+      .then(async (c) => {
+        if (deck.compilation || deck.getState().disc) return
+        await deck.loadDisc(c)
+        // a hidden second deck keeps its disc but stays off, as switching layouts leaves it
+        if (i === 1 && !twoDecks) deck.powerSwitch(false)
+      })
+      .catch(() => {})
+  })
 }
 
 const outputs = ['bc1-out', 'bc2-out']
@@ -297,8 +307,8 @@ export default function App() {
 
   useEffect(() => {
     decks.forEach((deck, i) => deck.setMount(hiddenMount.current[i]))
-    loadStartDisc(hiddenMount.current[0])
-  }, [decks])
+    loadStartDiscs(hiddenMount.current, deckCount === 2)
+  }, [decks, deckCount])
 
   useEffect(() => {
     let alive = true
