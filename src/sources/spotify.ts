@@ -57,7 +57,11 @@ async function api(path: string, init: RequestInit = {}) {
     spotifyLogout()
     throw new Error('spotify_expired')
   }
-  if (res.status === 403) throw new Error('spotify_forbidden')
+  if (res.status === 403) {
+    // keep Spotify's reason (e.g. a Premium or user-allowlist requirement) for the message
+    const body = await res.json().catch(() => null)
+    throw new Error('spotify_forbidden', { cause: body?.error?.message ?? res.statusText })
+  }
   if (res.status === 404) throw new Error('spotify_not_found')
   if (!res.ok) throw new Error(`spotify ${res.status}`)
   return res.status === 204 ? null : res.json().catch(() => null)
@@ -120,9 +124,8 @@ export async function resolveTracks(ref: SpotifyRef): Promise<{ title: string; a
       break
     } catch (e) {
       lastErr = e
-      if (e instanceof Error && (e.message === 'spotify_expired' || e.message === 'spotify_forbidden' || e.message === 'spotify_not_found')) {
-        throw e
-      }
+      // dev-mode apps are refused the older /tracks endpoint; only give up on an expired session
+      if (e instanceof Error && e.message === 'spotify_expired') throw e
     }
   }
   if (!loaded && lastErr) throw lastErr

@@ -57,7 +57,10 @@ function serializeDraft(draft: Compilation): PendingSpotifyState['draft'] {
 function formatLinkError(err: unknown): string {
   const msg = err instanceof Error ? err.message : ''
   if (msg === 'spotify_expired') return 'Spotify session expired — sign in again'
-  if (msg === 'spotify_forbidden') return 'Spotify denied access to this playlist'
+  if (msg === 'spotify_forbidden') {
+    const why = err instanceof Error && typeof err.cause === 'string' && err.cause ? ` (${err.cause})` : ''
+    return `Spotify denied access${why}`
+  }
   if (msg === 'spotify_not_found') return 'Spotify playlist not found or private'
   if (msg === 'empty') return 'no playable tracks found in that link'
   if (msg === 'spotify_login_required') return 'signing in to Spotify…'
