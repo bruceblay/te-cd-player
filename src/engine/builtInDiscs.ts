@@ -31,6 +31,20 @@ export const BUILT_IN_DISCS: BuiltIn[] = [
     ],
   },
   {
+    // Rill World's engine (rill-world/src/Field.h) rendered offline, two minutes a bank, shaken
+    // every 30 s for a new recording; the recordings are CC0 (rill-world/docs/SOURCES.md)
+    id: 'builtin:field-recordings',
+    title: 'Field Recordings',
+    color: '#ece6d6',
+    audio: [
+      ['/discs/field-recordings/01.m4a', 'Rain', 120],
+      ['/discs/field-recordings/02.m4a', 'Birds', 120],
+      ['/discs/field-recordings/03.m4a', 'Insects', 120],
+      ['/discs/field-recordings/04.m4a', 'Ocean', 120],
+      ['/discs/field-recordings/05.m4a', 'Cave', 120],
+    ],
+  },
+  {
     id: 'builtin:headphone-wonders',
     title: 'Headphone Wonders',
     color: '#22468c',
