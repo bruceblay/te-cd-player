@@ -495,17 +495,19 @@ export class Mixer {
     this.applyStreamGain()
   }
 
-  private autoAsked = false
+  /** the share prompt was cancelled: don't ask again this visit (the drawer still can) */
+  private declined = false
   /**
-   * Called on every click / key press: the first one after a streaming disc is
-   * plugged in starts stream FX (the browser needs a gesture for the share
-   * prompt and the pop-up). Asked once per visit; the drawer can start it later.
+   * A stream's EQ, compressor, FX or cue was touched: ask to capture the tab.
+   * The share prompt and the pop-up need a fresh click or key press, so a
+   * wheel or MIDI move can't ask. True while the prompt is up or about to be.
    */
-  autoStreamFx() {
-    if (this.autoAsked || this.cap || this.s.streamFx !== 'off' || this.timer === undefined) return
-    if (!canCaptureTab() || this.captureRouteNow() === 'none') return
-    this.autoAsked = true
+  private askStreamFx() {
+    if (this.s.streamFx === 'starting') return true
+    if (this.declined || this.cap || !canCaptureTab()) return false
+    if (!(navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation?.isActive) return false
     void this.startStreamFx()
+    return true
   }
 
   /**
@@ -532,7 +534,8 @@ export class Mixer {
       } as DisplayMediaStreamOptions)
     } catch (e) {
       win.close()
-      return fail((e as Error).name === 'NotAllowedError' ? 'sharing was cancelled' : 'this tab couldn’t be captured')
+      if ((e as Error).name === 'NotAllowedError') this.declined = true
+      return fail(this.declined ? 'sharing was cancelled' : 'this tab couldn’t be captured')
     }
     const video = stream.getVideoTracks()
     const surface = video[0]?.getSettings().displaySurface
@@ -707,7 +710,7 @@ export class Mixer {
     }
     this.setCh(c, { cue: !this.s.ch[c].cue })
     this.applyCh(c)
-    if (this.s.ch[c].cue && !this.processed(c)) this.flash('LOCAL ONLY')
+    if (this.s.ch[c].cue) this.localOnly(c)
     if (this.s.ch[c].cue && !this.s.cueOut) this.flash('NO CUE OUT', 1300)
   }
 
@@ -1061,6 +1064,7 @@ export class Mixer {
   private localOnly(c: Ch, fxOnly = false) {
     if (this.processed(c)) return
     if (fxOnly && this.s.ch[c].fx === 'siren') return
+    if (this.askStreamFx()) return
     // captured, only a lone stream gets a strip; two streams share the main mix
     if (!this.s.message) this.flash(this.cap ? 'ONE STREAM' : 'LOCAL ONLY', 900)
   }
