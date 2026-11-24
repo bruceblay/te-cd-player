@@ -10,11 +10,19 @@ import { resolveLink, type Compilation, type Item } from './compilation'
 type BuiltIn = { id: string; title: string; color: string } & (
   | { url: string }
   | { spotify: [id: string, title: string, seconds: number][] }
+  /** audio shipped in public/discs, in play order */
+  | { audio: [path: string, title: string, seconds: number][] }
 )
 
 export const BUILT_IN_DISCS: BuiltIn[] = [
   { id: 'builtin:oil-and-cotton', title: 'oil and cotton', color: '#ff5a1f', url: 'https://www.youtube.com/playlist?list=PLFBFAAB01A2CF4DB6' },
   { id: 'builtin:uli', title: 'ULI', color: '#1d1d1f', url: 'https://soundcloud.com/meltingseason/sets/uli' },
+  {
+    id: 'builtin:untitled',
+    title: 'Untitled',
+    color: '#c9cbd0',
+    audio: [['/discs/untitled/01.m4a', '1', 443]],
+  },
   {
     id: 'builtin:headphone-wonders',
     title: 'Headphone Wonders',
@@ -81,8 +89,12 @@ export const BUILT_IN_DISCS: BuiltIn[] = [
 /** a built-in disc as a draft; Spotify tracks use the full player when signed in, else the public embed */
 export async function openBuiltIn(d: BuiltIn, mount: HTMLElement): Promise<Compilation> {
   if ('url' in d) return { title: d.title, color: d.color, items: (await resolveLink(d.url, mount)).items }
-  const embed = !(spotifyConfigured() && (await spotifyToken()))
   const stamp = Date.now().toString(36)
+  if ('audio' in d) {
+    const items: Item[] = d.audio.map(([file, title, duration], i) => ({ kind: 'local', key: `${d.id}:${i}:${stamp}`, file, title, duration }))
+    return { title: d.title, color: d.color, items }
+  }
+  const embed = !(spotifyConfigured() && (await spotifyToken()))
   const items: Item[] = d.spotify.map(([id, title, duration], i) => ({
     kind: 'spotify',
     key: `${d.id}:${i}:${stamp}`,

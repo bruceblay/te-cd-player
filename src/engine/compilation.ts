@@ -4,7 +4,7 @@
  * user adds into tracks; `CompilationSource` plays the list by handing each
  * track to the right underlying player and switching players between tracks.
  */
-import { isPlayableFile, LocalSource } from '../sources/local'
+import { isPlayableFile, LocalSource, type LocalAudio } from '../sources/local'
 import { isSoundCloud, SoundCloudSource } from '../sources/soundcloud'
 import { parseSpotify, resolveTracks, SpotifyEmbedSource, SpotifySdkSource, type SpTrack } from '../sources/spotify'
 import { spotifyConfigured, spotifyToken } from '../sources/spotifyAuth'
@@ -15,7 +15,7 @@ export type Item =
   | { kind: 'youtube'; key: string; id: string; title: string; duration?: number }
   | { kind: 'soundcloud'; key: string; url: string; index: number; title: string; duration?: number }
   | { kind: 'spotify'; key: string; uri: string; title: string; duration?: number; embed?: boolean }
-  | { kind: 'local'; key: string; file: File; title: string; duration?: number }
+  | { kind: 'local'; key: string; file: LocalAudio; title: string; duration?: number }
 
 export interface Compilation {
   savedId?: string
@@ -146,7 +146,7 @@ export class CompilationSource implements Source {
   ) {
     const yt: string[] = []
     const sp: SpTrack[] = []
-    const local: File[] = []
+    const local: LocalAudio[] = []
     comp.items.forEach((it, i) => {
       if (it.kind === 'youtube') this.slots[i] = { child: 'yt', index: yt.push(it.id) - 1 }
       else if (it.kind === 'soundcloud') this.slots[i] = { child: `sc:${it.url}`, index: it.index }
@@ -212,7 +212,7 @@ export class CompilationSource implements Source {
     const duration = this.active.duration()
     if (duration > 0) this.comp.items[0].duration = duration
     return {
-      id: this.comp.savedId ? JSON.stringify([this.comp.savedId, ...this.comp.items.map(i => i.key)]) : `mix:${this.comp.items.map((i) => (i.kind === 'youtube' ? i.id : i.kind === 'soundcloud' ? `${i.url}#${i.index}` : i.kind === 'spotify' ? i.uri : i.file.name)).join('|')}`.slice(0, 400),
+      id: this.comp.savedId ? JSON.stringify([this.comp.savedId, ...this.comp.items.map(i => i.key)]) : `mix:${this.comp.items.map((i) => (i.kind === 'youtube' ? i.id : i.kind === 'soundcloud' ? `${i.url}#${i.index}` : i.kind === 'spotify' ? i.uri : typeof i.file === 'string' ? i.file : i.file.name)).join('|')}`.slice(0, 400),
       kind: 'mix',
       title: this.comp.title,
       color: this.comp.color,

@@ -6,6 +6,11 @@ const MEDIA_EXT = /\.(mp3|m4a|mp4|aac|wav|aiff?|flac|ogg|oga|opus|webm)$/i
 export const isPlayableFile = (f: File) =>
   f.type.startsWith('audio/') || f.type === 'video/mp4' || MEDIA_EXT.test(f.name)
 
+/** a picked file, or the URL of audio that ships with the app (a built-in disc) */
+export type LocalAudio = File | string
+const nameOf = (f: LocalAudio) => (typeof f === 'string' ? decodeURIComponent(f.split('/').pop() ?? f) : f.name)
+const pathOf = (f: LocalAudio) => (typeof f === 'string' ? '' : f.webkitRelativePath)
+
 /** Local files behave like an MP3 data disc: folders become INDEX numbers. */
 export class LocalSource implements Source {
   readonly kind = 'local' as const
@@ -17,7 +22,7 @@ export class LocalSource implements Source {
     beatDetect: true,
     persistCues: false,
   }
-  private files: File[]
+  private files: LocalAudio[]
   private el = new Audio()
   private ctx = audioContext()
   private gain = this.ctx.createGain()
@@ -30,16 +35,16 @@ export class LocalSource implements Source {
   private buf = new Float32Array(1024)
 
   constructor(
-    files: File[],
+    files: LocalAudio[],
     private cb: SourceCallbacks,
     /** the deck's output bus: speakers by default, or a mixer channel */
     out: AudioNode,
     /** compilations keep the order the user arranged */
     keepOrder = false,
   ) {
-    this.files = files.filter(isPlayableFile)
+    this.files = files.filter((f) => typeof f === 'string' || isPlayableFile(f))
     if (!keepOrder)
-      this.files.sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }))
+      this.files.sort((a, b) => (pathOf(a) || nameOf(a)).localeCompare(pathOf(b) || nameOf(b), undefined, { numeric: true }))
     this.el.preload = 'auto'
     this.el.preservesPitch = false // true varispeed: pitch follows speed
     const src = this.ctx.createMediaElementSource(this.el)
@@ -62,18 +67,18 @@ export class LocalSource implements Source {
   async load(): Promise<DiscInfo> {
     if (!this.files.length) throw new Error('no audio')
     const folders = new Map<string, number>()
-    const folderOf = (f: File) => {
-      const p = f.webkitRelativePath.split('/').slice(0, -1).join('/')
+    const folderOf = (f: LocalAudio) => {
+      const p = pathOf(f).split('/').slice(0, -1).join('/')
       if (!folders.has(p)) folders.set(p, folders.size + 1)
       return folders.get(p)!
     }
-    const root = this.files[0].webkitRelativePath.split('/')[0]
+    const root = pathOf(this.files[0]).split('/')[0]
     await this.cue(0, 0, false)
     return {
-      id: `local:${this.files.map((f) => f.name + f.size).join('|').slice(0, 200)}`,
+      id: `local:${this.files.map((f) => (typeof f === 'string' ? f : f.name + f.size)).join('|').slice(0, 200)}`,
       kind: 'local',
-      title: root || (this.files.length === 1 ? this.files[0].name : `${this.files.length} files`),
-      tracks: this.files.map((f) => ({ title: f.name.replace(/\.[^.]+$/, ''), duration: 0, folder: folderOf(f) })),
+      title: root || (this.files.length === 1 ? nameOf(this.files[0]) : `${this.files.length} files`),
+      tracks: this.files.map((f) => ({ title: nameOf(f).replace(/\.[^.]+$/, ''), duration: 0, folder: folderOf(f) })),
     }
   }
 
@@ -83,9 +88,9 @@ export class LocalSource implements Source {
     if (track !== this.current) {
       this.current = track
       if (this.url) URL.revokeObjectURL(this.url)
-      this.url = URL.createObjectURL(f)
+      this.url = typeof f === 'string' ? '' : URL.createObjectURL(f)
       const rate = this.el.playbackRate
-      this.el.src = this.url
+      this.el.src = this.url || (f as string)
       await new Promise<void>((r) => {
         this.el.addEventListener('loadedmetadata', () => r(), { once: true })
         this.el.addEventListener('error', () => r(), { once: true })
@@ -153,6 +158,7 @@ export class LocalSource implements Source {
 
   detectBpm(track: number) {
     const f = this.files[track]
+    if (typeof f === 'string') return fetch(f).then((r) => r.blob()).then(detectBpm, () => null)
     return f ? detectBpm(f) : Promise.resolve(null)
   }
 
