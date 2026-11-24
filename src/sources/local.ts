@@ -2,7 +2,9 @@ import { detectBpm, encodeWav, loadTapWorklet } from '../engine/audio'
 import type { Capabilities, DiscInfo, Source, SourceCallbacks } from '../engine/types'
 import { audioContext, clamp } from '../engine/util'
 
-const AUDIO_EXT = /\.(mp3|m4a|aac|wav|aiff?|flac|ogg|oga|opus|webm)$/i
+const MEDIA_EXT = /\.(mp3|m4a|mp4|aac|wav|aiff?|flac|ogg|oga|opus|webm)$/i
+export const isPlayableFile = (f: File) =>
+  f.type.startsWith('audio/') || f.type === 'video/mp4' || MEDIA_EXT.test(f.name)
 
 /** Local files behave like an MP3 data disc: folders become INDEX numbers. */
 export class LocalSource implements Source {
@@ -35,7 +37,7 @@ export class LocalSource implements Source {
     /** compilations keep the order the user arranged */
     keepOrder = false,
   ) {
-    this.files = files.filter((f) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name))
+    this.files = files.filter(isPlayableFile)
     if (!keepOrder)
       this.files.sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }))
     this.el.preload = 'auto'

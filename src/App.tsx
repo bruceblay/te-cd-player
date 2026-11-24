@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Deck } from './engine/deck'
 import { completeSpotifyLogin, spotifyToken } from './sources/spotifyAuth'
 import { Device } from './ui/Device'
@@ -6,6 +6,22 @@ import { BurnDialog, type BurnDialogHandle } from './ui/BurnDialog'
 import { Mixer, type MixerState } from './engine/mixer'
 import { Sidekick } from './ui/Sidekick'
 import { Cable, type End } from './ui/Cable'
+import { SideDrawer, readHandStyle, readLayout, saveHandStyle, saveLayout, type LayoutConfig } from './ui/SideDrawer'
+import {
+  DeskProps,
+  clearGearOverlap,
+  createInitialProps,
+  readPropsEnabled,
+  readSavedProps,
+  saveProps,
+  savePropsEnabled,
+  scatterProps,
+  spawnProp,
+  type PlacedProp,
+  type PropId,
+} from './ui/DeskProps'
+import { HandTracker, type HandStatus } from './ui/HandTracker'
+import type { HandStyle } from './ui/handRender'
 import type { Jack } from './engine/mixer'
 
 
@@ -21,13 +37,6 @@ const getMixer = () => (mixer ??= new Mixer())
 const noSub = () => () => {}
 const noState = () => null
 const CABLES_KEY = 'bc1.cables'
-const readMixerPref = () => {
-  try {
-    return localStorage.getItem('bc1.mixer') !== '0'
-  } catch {
-    return true
-  }
-}
 const readCables = (): Patch[] => {
   try {
     const raw = localStorage.getItem(CABLES_KEY)
@@ -58,15 +67,131 @@ const readCables = (): Patch[] => {
   }
 }
 if (import.meta.env.DEV) Object.assign(window, { bc1: decks[0], bc2: decks[1] })
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    decks.forEach((d) => d.dispose())
+    mixer?.detach()
+  })
+}
 
 export default function App() {
   const active = useRef(0)
-  const [mixerOn, setMixerOn] = useState(readMixerPref)
+  const rigRef = useRef<HTMLDivElement>(null)
+  const prevRects = useRef<Map<string, DOMRect>>(new Map())
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const drawerOpenRef = useRef(false)
+  drawerOpenRef.current = drawerOpen
+  const [handsOn, setHandsOn] = useState(false)
+  const [handStyle, setHandStyle] = useState<HandStyle>(readHandStyle)
+  const [handStatus, setHandStatus] = useState<HandStatus>({ state: 'off', hands: 0 })
+  useEffect(() => {
+    saveHandStyle(handStyle)
+  }, [handStyle])
+  const [propsOn, setPropsOn] = useState(readPropsEnabled)
+  useEffect(() => {
+    savePropsEnabled(propsOn)
+  }, [propsOn])
+  const [props, setProps] = useState<PlacedProp[] | null>(readSavedProps)
+  // On first load (no saved positions), scatter randomly outside the live gear bounds and persist
+  useLayoutEffect(() => {
+    if (props !== null) return
+    const initial = createInitialProps()
+    setProps(initial)
+    saveProps(initial)
+  }, [props])
+  useEffect(() => {
+    if (props !== null) saveProps(props)
+  }, [props])
+  const updateProps = (updater: (cur: PlacedProp[]) => PlacedProp[]) => {
+    setProps((cur) => updater(cur ?? []))
+  }
+  const toggleProp = (id: PropId) => {
+    updateProps((cur) => (cur.some((p) => p.id === id) ? cur.filter((p) => p.id !== id) : [...cur, spawnProp(id, cur)]))
+  }
+  const [layout, setLayout] = useState<LayoutConfig>(readLayout)
+  const deckCount = layout.decks
+  const mixerOn = deckCount === 2 || layout.sidekick
   const ms = useSyncExternalStore<MixerState | null>(
     mixerOn ? getMixer().subscribe : noSub,
     mixerOn ? getMixer().getState : noState,
   )
   const [cables, setCables] = useState<Patch[]>(readCables)
+  const snapshotLayout = () => {
+    const map = new Map<string, DOMRect>()
+    rigRef.current?.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+      map.set(el.dataset.flip!, el.getBoundingClientRect())
+    })
+    prevRects.current = map
+  }
+  const updateLayout = (next: LayoutConfig) => {
+    snapshotLayout()
+    setLayout(next)
+    if (next.decks === 2) {
+      setCables((current) => {
+        if (!current[0].b || current[0].b !== current[1].b) return current
+        const free = Object.keys(inputs).find((id) => id !== current[0].b) ?? null
+        return [current[0], { ...current[1], b: free }]
+      })
+    }
+  }
+  useLayoutEffect(() => {
+    const prev = prevRects.current
+    if (!prev.size) return
+    prevRects.current = new Map()
+    // Relocate any desk items now covered by the resized/expanded gear BEFORE FLIP transforms start
+    setProps((cur) => (cur ? clearGearOverlap(cur) : cur))
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const root = rigRef.current
+    if (!root) return
+    const easing = 'cubic-bezier(0.22, 1, 0.36, 1)'
+    const duration = 280
+    const anims: Animation[] = []
+    root.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+      const before = prev.get(el.dataset.flip!)
+      if (before) {
+        const after = el.getBoundingClientRect()
+        if (!after.width || !before.width) return
+        const dx = before.left - after.left
+        const dy = before.top - after.top
+        const sx = before.width / after.width
+        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(sx - 1) < 0.002) return
+        anims.push(
+          el.animate(
+            [
+              { transformOrigin: '0 0', transform: `translate(${dx}px, ${dy}px) scale(${sx})` },
+              { transformOrigin: '0 0', transform: 'none' },
+            ],
+            { duration, easing },
+          ),
+        )
+      } else {
+        anims.push(
+          el.animate(
+            [
+              { opacity: 0, transform: 'scale(0.97)' },
+              { opacity: 1, transform: 'none' },
+            ],
+            { duration: 240, easing },
+          ),
+        )
+      }
+    })
+    const cableEls = [...root.querySelectorAll<SVGElement>('.cable')]
+    if (cableEls.length && anims.length) {
+      cableEls.forEach((el) => {
+        el.style.opacity = '0'
+      })
+      void Promise.allSettled(anims.map((a) => a.finished)).then(() => {
+        window.dispatchEvent(new Event('resize'))
+        requestAnimationFrame(() => {
+          cableEls.forEach((el) => {
+            el.style.opacity = ''
+            el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 150, easing: 'ease-out' })
+          })
+        })
+      })
+    }
+  }, [deckCount, mixerOn])
   useEffect(() => {
     try {
       localStorage.setItem(CABLES_KEY, JSON.stringify(cables))
@@ -76,24 +201,26 @@ export default function App() {
   }, [cables])
   useEffect(() => {
     if (mixerOn) {
-      decks.forEach((deck, i) => {
-        const { a, b } = cables[i]
-        getMixer().plug(deck, a && b ? inputs[b] : null)
-      })
+      const c0 = cables[0]
+      getMixer().plug(decks[0], c0.a && c0.b ? inputs[c0.b] : null)
+      if (deckCount === 2) {
+        const c1 = cables[1]
+        getMixer().plug(decks[1], c1.a && c1.b ? inputs[c1.b] : null)
+      } else {
+        active.current = 0
+        decks[1].powerSwitch(false)
+        getMixer().plug(decks[1], null)
+      }
     } else {
       active.current = 0
       decks[1].powerSwitch(false)
       mixer?.detach()
     }
-  }, [mixerOn, cables])
+  }, [mixerOn, deckCount, cables, decks])
   useEffect(() => {
     if (import.meta.env.DEV) Object.assign(window, { mix: mixerOn ? getMixer() : null })
-    try {
-      localStorage.setItem('bc1.mixer', mixerOn ? '1' : '0')
-    } catch {
-      /* private mode: just not remembered */
-    }
-  }, [mixerOn])
+    saveLayout(layout)
+  }, [layout, mixerOn])
   const hiddenMount = useRef<(HTMLDivElement | null)[]>([])
   const help = useRef<HTMLDialogElement>(null)
   const burn = useRef<(BurnDialogHandle | null)[]>([])
@@ -106,6 +233,9 @@ export default function App() {
 
   useEffect(() => {
     decks.forEach((deck, i) => deck.setMount(hiddenMount.current[i]))
+  }, [decks])
+
+  useEffect(() => {
     void spotifyToken().then((t) => setSpotifyIn(!!t))
     void completeSpotifyLogin().then((pending) => {
       if (pending) {
@@ -118,8 +248,16 @@ export default function App() {
   // keyboard: mirrors the panel
   useEffect(() => {
     const pressed = new Map<string, Deck>()
-    const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+    const typing = (e: KeyboardEvent) =>
+      e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement
     const down = (e: KeyboardEvent) => {
+      if (drawerOpenRef.current) {
+        if (e.key === 'Escape' && !e.repeat) {
+          setDrawerOpen(false)
+          e.preventDefault()
+        }
+        return
+      }
       if (document.querySelector('dialog[open]')) {
         if (e.key === '?' && help.current?.open && !e.repeat) {
           help.current.close()
@@ -149,7 +287,10 @@ export default function App() {
       else if (k === 'b') deck.btDown()
       else if (k === 'o') openLid(active.current)
       else if (k === 'p') deck.powerSwitch(deck.getState().power === 'off')
-      else if (k === 'm') setMixerOn((v) => !v)
+      else if (k === 'm') {
+        snapshotLayout()
+        setLayout((l) => (l.decks === 2 || l.sidekick ? { decks: 1, sidekick: false } : { decks: 2, sidekick: true }))
+      }
       else if (k === '?') help.current?.showModal()
       else handled = false
       if (handled) {
@@ -175,33 +316,54 @@ export default function App() {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [])
+  }, [decks])
 
   return (
     <main className="page">
+      <SideDrawer
+        open={drawerOpen}
+        onOpen={() => setDrawerOpen(true)}
+        onClose={() => setDrawerOpen(false)}
+        layout={layout}
+        onLayout={updateLayout}
+        handsOn={handsOn}
+        onHandsOn={setHandsOn}
+        handStyle={handStyle}
+        onHandStyle={setHandStyle}
+        handStatus={handStatus}
+        propsOn={propsOn}
+        onPropsOn={setPropsOn}
+        props={props ?? []}
+        onToggleProp={toggleProp}
+        onScatterProps={() => updateProps((cur) => scatterProps(cur))}
+        onClearProps={() => setProps([])}
+      />
+      {propsOn && props && <DeskProps items={props} decks={decks} onChange={updateProps} />}
+      <HandTracker enabled={handsOn} style={handStyle} onStatus={setHandStatus} />
       {/* the deck keeps its place in the tree either way, so a playing video isn't torn down */}
-      <div className={mixerOn ? 'rig' : 'solo'}>
-        {decks.map((deck, i) => (i === 0 || mixerOn) && (
+      <div ref={rigRef} className={mixerOn ? (deckCount === 1 ? 'rig one-deck' : 'rig') : 'solo'}>
+        {decks.map((deck, i) => i < deckCount && (
           <Device key={i} deck={deck} index={i} output={outputs[i]} onSelect={() => { active.current = i }} onOpenLid={() => openLid(i)} />
         ))}
         {mixerOn && ms && <Sidekick mixer={getMixer()} s={ms} />}
-        {mixerOn && cables.map((cable, i) => {
+        {mixerOn && cables.slice(0, deckCount).map((cable, i) => {
           const preferred = defaultCables[i].b
+          const otherB = deckCount === 2 ? cables[1 - i].b : null
           const freeB = Object.keys(inputs)
-            .filter((id) => id !== cables[1 - i].b)
+            .filter((id) => id !== otherB)
             .sort((x, y) => (x === preferred ? -1 : y === preferred ? 1 : 0))
           return (
             <Cable key={i} {...cable}
               accepts={{ a: [outputs[i]], b: freeB }}
               onChange={(end, jack) => setCables(current => {
-                if (end === 'b' && jack && current[1 - i].b === jack) return current
+                if (end === 'b' && jack && deckCount === 2 && current[1 - i].b === jack) return current
                 return current.map((patch, j) => j === i ? { ...patch, [end]: jack } : patch)
               })}
             />
           )
         })}
       </div>
-      {decks.map((_, i) => <div key={i} className="offscreen" ref={el => { hiddenMount.current[i] = el }} aria-hidden />)}
+      {decks.map((deck, i) => <div key={i} className="offscreen" ref={el => { hiddenMount.current[i] = el; deck.setMount(el) }} aria-hidden />)}
 
       <dialog ref={help} className="lid help-dialog" onClick={(e) => e.target === help.current && help.current?.close()}>
         <header className="lid-head">

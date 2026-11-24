@@ -4,7 +4,7 @@
  * user adds into tracks; `CompilationSource` plays the list by handing each
  * track to the right underlying player and switching players between tracks.
  */
-import { LocalSource } from '../sources/local'
+import { isPlayableFile, LocalSource } from '../sources/local'
 import { isSoundCloud, SoundCloudSource } from '../sources/soundcloud'
 import { parseSpotify, resolveTracks, SpotifyEmbedSource, SpotifySdkSource, type SpTrack } from '../sources/spotify'
 import { beginSpotifyLogin, spotifyConfigured, spotifyToken } from '../sources/spotifyAuth'
@@ -96,10 +96,9 @@ export async function resolveLink(url: string, mount: HTMLElement): Promise<{ ti
   throw new Error('unsupported')
 }
 
-const AUDIO_EXT = /\.(mp3|m4a|aac|wav|aiff?|flac|ogg|oga|opus|webm)$/i
 export function resolveFiles(files: File[]): { title: string; items: Item[] } {
   const audio = files
-    .filter((f) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name))
+    .filter(isPlayableFile)
     .sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }))
   const folder = audio[0]?.webkitRelativePath.split('/')[0]
   return {

@@ -244,7 +244,7 @@ export const BurnDialog = forwardRef<
             files
             <input
               type="file"
-              accept="audio/*"
+              accept="audio/*,video/mp4,.mp4"
               multiple
               onChange={(e) => {
                 if (e.target.files?.length) {

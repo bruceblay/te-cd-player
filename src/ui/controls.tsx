@@ -12,6 +12,13 @@ export const pos = (x: number, y: number, w?: number, h?: number): CSSProperties
   width: w === undefined ? undefined : u(w),
   height: h === undefined ? undefined : u(h),
 })
+export const capturePointer = (el: Element, id: number) => {
+  try {
+    el.setPointerCapture(id)
+  } catch {
+    /* synthetic pointer (e.g. hand tracking) or already released */
+  }
+}
 
 export function Key({
   x,
@@ -48,7 +55,7 @@ export function Key({
         aria-label={title}
         title={title}
         onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId)
+          capturePointer(e.currentTarget, e.pointerId)
           setDown(true)
           onDown?.()
         }}
@@ -130,7 +137,7 @@ export function Knob({
       aria-valuenow={value}
       style={pos(x, y, size, size)}
       onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId)
+        capturePointer(e.currentTarget, e.pointerId)
         drag.current = { y: e.clientY, v: value, moved: false }
       }}
       onPointerMove={(e) => {
@@ -200,7 +207,7 @@ export function Jog({ x, y, w, h, value, label = 'jog', onChange }: { x: number;
         style={{ width: u(h - 3), height: u(h - 3), left: `calc(50% - ${u((h - 3) / 2)}px)`, top: u(1.5), transform: `translateX(${value * travel}px)` }}
         onPointerDown={(e) => {
           if (e.button !== 0 || drag.current) return
-          e.currentTarget.setPointerCapture(e.pointerId)
+          capturePointer(e.currentTarget, e.pointerId)
           drag.current = { id: e.pointerId, x: e.clientX }
         }}
         onPointerMove={(e) => {

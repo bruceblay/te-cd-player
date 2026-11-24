@@ -2,7 +2,7 @@ import { Fragment, useLayoutEffect, useRef, useState } from 'react'
 import lidPrint from '../assets/sidekick-lid-print.svg'
 import { SETTINGS, type Mixer, type MixerState } from '../engine/mixer'
 import { FX_TYPES } from '../engine/sidekickFx'
-import { Jog, Key, Print, U, pos, u } from './controls'
+import { Jog, Key, Print, U, capturePointer, pos, u } from './controls'
 
 /*
  * EP-136 K.O.-sidekick, laid out in the units of TE's hardware-overview drawing
@@ -31,8 +31,8 @@ export function Sidekick({ mixer, s }: { mixer: Mixer; s: MixerState }) {
   const knob = (c: Ch) => mixer.gainKnob(c)
 
   return (
-    <div className="sidekick-wrap" ref={wrap}>
-      <div className="sidekick" style={{ width: u(PW), height: u(PH), transform: `scale(${k})`, ['--u' as string]: `${U}px` }}>
+    <div className="sidekick-wrap" data-flip="sidekick" ref={wrap}>
+      <div className="sidekick" style={{ width: u(PW), height: u(PH), ['--k' as string]: k, ['--u' as string]: `${U}px` }}>
         {/* ---------- top edge band ---------- */}
         <div className="sk-band" style={pos(0, 0, PW, 19)}>
           <span className="sk-band-out" style={{ width: u(37) }}>OUTPUT</span>
@@ -100,9 +100,9 @@ export function Sidekick({ mixer, s }: { mixer: Mixer; s: MixerState }) {
 
         {/* ---------- right column ---------- */}
         <div className="sk-lcd" style={pos(RIGHT, 147, 36, 73)}>
-          <Lcd s={s} />
+          <Lcd mixer={mixer} s={s} />
         </div>
-        <ForcePad x={RIGHT} y={257} d={37} value={s.pad} onChange={(p) => mixer.setPad(p)} />
+        <ForcePad x={RIGHT} y={257} d={37} value={s.pad} onMod={(stick, pad, lock) => mixer.setMod(stick, pad, lock)} />
         <svg className="sk-bracket" style={pos(136, 272, 12, 106)} viewBox="0 0 12 106" aria-hidden>
           <path d="M11 3 H4 V102 H11" />
         </svg>
@@ -112,7 +112,7 @@ export function Sidekick({ mixer, s }: { mixer: Mixer; s: MixerState }) {
         <Jog label="mod" x={RIGHT} y={367} w={37} h={18} value={s.stick} onChange={(v) => mixer.setStick(v)} />
         <Print x={RIGHT} y={431.5} w={37} className="center">PHONES</Print>
         <SkKnob x={RIGHT} y={440} color="grey" value={s.phones} min={0} max={1} label="phones volume" onChange={(v) => mixer.setPhones(v)} />
-        <Key x={RIGHT} y={495} w={37} h={18} className="sk-key light" title="select" onDown={() => mixer.selectDown()} onUp={() => mixer.selectUp()}>
+        <Key x={RIGHT} y={495} w={37} h={18} className={`sk-key light ${s.selectHeld ? 'lit' : ''}`} title="select (click to latch, or hold)" onDown={() => mixer.selectDown()} onUp={() => mixer.selectUp()}>
           <span className="sk-legend">SELECT</span>
         </Key>
         <span className="sk-jack" style={pos(159, 546, 16, 8)} title="cue / phones" />
@@ -163,7 +163,7 @@ function SkKnob({
       aria-valuenow={value}
       style={pos(x, y, 37, 37)}
       onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId)
+        capturePointer(e.currentTarget, e.pointerId)
         drag.current = { y: e.clientY, v: value, moved: false }
       }}
       onPointerMove={(e) => {
@@ -215,7 +215,7 @@ function Fader({ x, y, h, value, onChange, label }: { x: number; y: number; h: n
         aria-valuenow={value}
         style={{ width: u(18), height: u(18), top: u(9 + 2 + (1 - value) * travel - 9) }}
         onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId)
+          capturePointer(e.currentTarget, e.pointerId)
           drag.current = { y: e.clientY, v: value }
         }}
         onPointerMove={(e) => {
@@ -232,13 +232,28 @@ function Fader({ x, y, h, value, onChange, label }: { x: number; y: number; h: n
 
 /**
  * Force pad. Pens and touchscreens send real pressure; with a mouse, a press
- * starts at medium pressure and dragging up presses harder.
+ * starts at medium pressure, dragging up/down changes pressure, and dragging
+ * left/right drives MOD so both FX axes can be played one-handed. Right-drag
+ * locks the effect on release.
  */
-function ForcePad({ x, y, d, value, onChange }: { x: number; y: number; d: number; value: number; onChange: (p: number) => void }) {
-  const start = useRef<number | null>(null)
+function ForcePad({
+  x,
+  y,
+  d,
+  value,
+  onMod,
+}: {
+  x: number
+  y: number
+  d: number
+  value: number
+  onMod: (stick: number, pad: number, lockOnRelease?: boolean) => void
+}) {
+  const start = useRef<{ x: number; y: number; lock: boolean } | null>(null)
   const real = (e: React.PointerEvent) => e.pointerType !== 'mouse' && e.pressure > 0 && e.pressure !== 0.5
-  const fromPointer = (e: React.PointerEvent) =>
-    real(e) ? e.pressure : Math.max(0.05, Math.min(1, 0.6 + (start.current! - e.clientY) / 80))
+  const padOf = (e: React.PointerEvent) =>
+    real(e) ? e.pressure : Math.max(0.05, Math.min(1, 0.6 + (start.current!.y - e.clientY) / 80))
+  const stickOf = (e: React.PointerEvent) => Math.max(-1, Math.min(1, (e.clientX - start.current!.x) / 60))
   return (
     <div
       className={`sk-pad ${value > 0.01 ? 'down' : ''}`}
@@ -248,22 +263,27 @@ function ForcePad({ x, y, d, value, onChange }: { x: number; y: number; d: numbe
       aria-valuemin={0}
       aria-valuemax={1}
       aria-valuenow={value}
+      title="force pad (up/down: pressure · left/right: mod · right-drag: lock)"
+      onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId)
-        start.current = e.clientY
-        onChange(fromPointer(e))
+        if (e.button !== 0 && e.button !== 2) return
+        capturePointer(e.currentTarget, e.pointerId)
+        start.current = { x: e.clientX, y: e.clientY, lock: e.button === 2 }
+        onMod(0, padOf(e))
       }}
       onPointerMove={(e) => {
-        if (start.current == null) return
-        onChange(fromPointer(e))
+        if (!start.current) return
+        onMod(stickOf(e), padOf(e))
       }}
       onPointerUp={() => {
+        if (!start.current) return
+        const lock = start.current.lock
         start.current = null
-        onChange(0)
+        onMod(0, 0, lock)
       }}
       onPointerCancel={() => {
         start.current = null
-        onChange(0)
+        onMod(0, 0)
       }}
     >
     </div>
@@ -274,10 +294,23 @@ function ForcePad({ x, y, d, value, onChange }: { x: number; y: number; d: numbe
 
 const FX_SHORT: Record<string, string> = { filter: 'FILTER', delay: 'DELAY', tape: 'TAPE', loop: 'LOOP', tremolo: 'TREMOLO', siren: 'SIREN' }
 
-function Lcd({ s }: { s: MixerState }) {
+function Lcd({ mixer, s }: { mixer: Mixer; s: MixerState }) {
+  const lastWheel = useRef(0)
   // 36 x 73 plate units; drawn in a 72 x 146 grid so the pixel font sits on whole units
   return (
-    <svg className="lcd" viewBox="0 0 72 146" aria-label="mixer screen" role="img">
+    <svg
+      className="lcd"
+      viewBox="0 0 72 146"
+      aria-label="mixer screen"
+      role="img"
+      onWheel={(e) => {
+        if (!s.power || (s.screen !== 'fx' && s.screen !== 'main')) return
+        const now = performance.now()
+        if (now - lastWheel.current < 140 || Math.abs(e.deltaY) < 4) return
+        lastWheel.current = now
+        mixer.stepFx(e.deltaY > 0 ? 1 : -1)
+      }}
+    >
       <defs>
         <pattern id="lcd-dots" width="3" height="3" patternUnits="userSpaceOnUse">
           <rect width="1" height="1" className="grid" />
@@ -285,7 +318,7 @@ function Lcd({ s }: { s: MixerState }) {
       </defs>
       <rect width="72" height="146" className="lcd-bg" />
       {s.power && <rect width="72" height="146" fill="url(#lcd-dots)" />}
-      {s.power && <Screen s={s} />}
+      {s.power && <Screen mixer={mixer} s={s} />}
     </svg>
   )
 }
@@ -306,9 +339,9 @@ function Bar({ x, y, w, h, v, vertical = true }: { x: number; y: number; w: numb
   )
 }
 
-function Tag({ x, y, text, on, w = 30 }: { x: number; y: number; text: string; on: boolean; w?: number }) {
+function Tag({ x, y, text, on, w = 30, onClick }: { x: number; y: number; text: string; on: boolean; w?: number; onClick?: () => void }) {
   return (
-    <g>
+    <g className={onClick ? 'lcd-btn' : undefined} onClick={onClick}>
       <rect x={x} y={y} width={w} height={11} className={on ? 'on' : 'frame'} />
       <text x={x + w / 2} y={y + 8.5} textAnchor="middle" className={on ? 'ink' : 'txt'}>
         {text}
@@ -317,7 +350,35 @@ function Tag({ x, y, text, on, w = 30 }: { x: number; y: number; text: string; o
   )
 }
 
-function Screen({ s }: { s: MixerState }) {
+function MiniTag({
+  x,
+  y,
+  w,
+  text,
+  state,
+  onClick,
+  title,
+}: {
+  x: number
+  y: number
+  w: number
+  text: string
+  state: 'off' | 'armed' | 'on'
+  onClick: () => void
+  title: string
+}) {
+  return (
+    <g className="lcd-btn" onClick={onClick}>
+      <title>{title}</title>
+      <rect x={x} y={y} width={w} height={10} className={state === 'on' ? 'on' : state === 'armed' ? 'frame' : 'dimframe'} />
+      <text x={x + w / 2} y={y + 7.2} textAnchor="middle" className={state === 'on' ? 'mini ink' : state === 'armed' ? 'mini' : 'dimtxt'}>
+        {text}
+      </text>
+    </g>
+  )
+}
+
+function Screen({ mixer, s }: { mixer: Mixer; s: MixerState }) {
   const focusCh = s.focus === 'both' ? 0 : s.focus
   const ch = s.ch[s.screenCh]
   const title = (t: string) => (
@@ -333,8 +394,8 @@ function Screen({ s }: { s: MixerState }) {
       <>
         {title('SYSTEM')}
         {SETTINGS.map((item, i) => (
-          <g key={item}>
-            {i === s.settingsIndex && <rect x="2" y={24 + i * 30} width="68" height="26" className="frame" />}
+          <g key={item} className="lcd-btn" onClick={() => mixer.selectSetting(i)}>
+            <rect x="2" y={24 + i * 30} width="68" height="26" className={i === s.settingsIndex ? 'frame' : 'hit'} />
             <text x="6" y={34 + i * 30} className="txt">
               {item}
             </text>
@@ -344,7 +405,7 @@ function Screen({ s }: { s: MixerState }) {
           </g>
         ))}
         <text x="36" y="140" textAnchor="middle" className="dimtxt">
-          STICK / PAD
+          CLICK / STICK
         </text>
       </>
     )
@@ -353,15 +414,15 @@ function Screen({ s }: { s: MixerState }) {
       <>
         {title(`FX ${s.screenCh + 1}`)}
         {FX_TYPES.map((t, i) => (
-          <g key={t}>
-            {t === ch.fx && <rect x="2" y={20 + i * 18} width="68" height="15" className="on" />}
+          <g key={t} className="lcd-btn" onClick={() => mixer.selectFx(t)}>
+            <rect x="2" y={20 + i * 18} width="68" height="15" className={t === ch.fx ? 'on' : 'hit'} />
             <text x="36" y={31 + i * 18} textAnchor="middle" className={t === ch.fx ? 'ink' : 'txt'}>
               {FX_SHORT[t]}
             </text>
           </g>
         ))}
         <text x="36" y="140" textAnchor="middle" className="dimtxt">
-          – MOD +
+          CLICK / MOD
         </text>
       </>
     )
@@ -450,6 +511,11 @@ function Screen({ s }: { s: MixerState }) {
         <text x="36" y="34" textAnchor="middle" className="huge">
           {String(Math.round(s.ch[focusCh].bpm)).padStart(3, '0')}
         </text>
+        {s.mainCue && (
+          <text x="69" y="22" textAnchor="end" className="dimtxt">
+            MC
+          </text>
+        )}
         <Bar x={8} y={40} w={4} h={57} v={s.ch[0].meter[0]} />
         <Bar x={14} y={40} w={4} h={57} v={s.ch[0].meter[1]} />
         <Bar x={26} y={40} w={9} h={57} v={s.masterMeter[0]} />
@@ -457,19 +523,42 @@ function Screen({ s }: { s: MixerState }) {
         <Bar x={54} y={40} w={4} h={57} v={s.ch[1].meter[0]} />
         <Bar x={60} y={40} w={4} h={57} v={s.ch[1].meter[1]} />
         <path d={`M2 ${92 - s.pad * 50} l4 3 l-4 3 z`} className="on" />
-        <text x="36" y="112" textAnchor="middle" className="big">
-          {s.focus === 'both' ? `${FX_SHORT[s.ch[0].fx].slice(0, 3)}+${FX_SHORT[s.ch[1].fx].slice(0, 3)}` : FX_SHORT[fx]}
-        </text>
-        {held && (
-          <text x="6" y="124" className="txt">
-            ∞
+        <g className="lcd-btn" onClick={() => mixer.openFxMenu()}>
+          <title>click to pick effect (or scroll)</title>
+          <rect x="2" y="100" width="68" height="14" className="hit" />
+          <text x="36" y="111" textAnchor="middle" className="big">
+            {s.focus === 'both' ? `${FX_SHORT[s.ch[0].fx].slice(0, 3)}+${FX_SHORT[s.ch[1].fx].slice(0, 3)}` : FX_SHORT[fx]}
           </text>
-        )}
-        <text x="66" y="124" textAnchor="end" className="dimtxt">
-          {[s.serial && 'SER', s.mainCue && 'MC'].filter(Boolean).join(' ')}
-        </text>
-        <Tag x={3} y={131} w={31} text="FX" on={s.focus === 0 || s.focus === 'both'} />
-        <Tag x={38} y={131} w={31} text="FX" on={s.focus === 1 || s.focus === 'both'} />
+        </g>
+        <MiniTag
+          x={3}
+          y={117}
+          w={23}
+          text={s.seq === 'rec' ? 'REC' : s.seq === 'play' ? 'SEQ' : 'LOCK'}
+          state={held || s.seq === 'rec' ? 'on' : s.lockArmed ? 'armed' : 'off'}
+          onClick={() => mixer.toggleLock()}
+          title={held ? 'click to release lock / sequence' : s.lockArmed ? 'lock armed: drag pad to freeze' : 'arm FX lock (next pad drag freezes on release)'}
+        />
+        <MiniTag
+          x={28}
+          y={117}
+          w={16}
+          text="1+2"
+          state={s.focus === 'both' ? 'on' : 'off'}
+          onClick={() => mixer.toggleBothFx()}
+          title="drive both channels' FX together"
+        />
+        <MiniTag
+          x={46}
+          y={117}
+          w={23}
+          text="SER"
+          state={s.serial ? 'on' : 'off'}
+          onClick={() => mixer.toggleSerial()}
+          title="serial FX mode (main mix through FX 1 then FX 2)"
+        />
+        <Tag x={3} y={131} w={31} text="FX" on={s.focus === 0 || s.focus === 'both'} onClick={() => mixer.focusFx(0)} />
+        <Tag x={38} y={131} w={31} text="FX" on={s.focus === 1 || s.focus === 'both'} onClick={() => mixer.focusFx(1)} />
       </>
     )
   }

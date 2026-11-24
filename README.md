@@ -75,9 +75,9 @@ The EQ, compressor, pan, gain boost, cue and effects process **local files only*
 | HIGH / MID / LOW | EQ. Style is set in system settings: DJ (isolator: full left kills the band), studio (±12 dB), param (±15 dB, narrower mid). Double-click resets |
 | CUE | sends the channel, before its FX and fader, to the cue output. Both CUEs: main mix to cue. Cue output device is chosen in system settings |
 | fader | channel level. SELECT + fader shows the value |
-| FX | click to open that channel’s effect menu, then drag MOD to choose an effect. Click the same FX button again to return to the previous screen. Hold both FX: drive both effects. SELECT + both FX: serial mode (main mix through FX 1 then FX 2) |
-| MOD stick, force pad | play the effect (see below). With a mouse, a pad press starts at medium pressure and dragging up presses harder; pens and touchscreens send real pressure |
-| SELECT | while playing an effect: lock it. Hold SELECT and play MOD / pad: record a looping FX sequence (rounded to whole beats); moving MOD or pad again stops it |
+| FX | click to open that channel’s effect menu, then click an effect on the LCD (or drag MOD / scroll) to choose it. Click the active FX name on the LCD to open the menu, or click `1+2` / `SER` on the LCD for both-channel or serial mode |
+| MOD stick, force pad | play the effect (see below). With a mouse, drag the force pad up/down for pressure and left/right for MOD to play both axes one-handed; right-drag (or arm `LOCK` on the LCD) freezes the effect on release |
+| SELECT | click to latch (lights up) or hold for shift combos (`GAIN` pan/comp type, `CUE` tempo, or drag MOD / pad to record a looping FX sequence). Click again to unlatch |
 | SELECT + CUE | tempo screen: tap CUE for tap tempo, hold CUE for auto BPM (local files) |
 | system button (lid, lower right) | settings: MOD steps through EQ style, tempo source, cue output; pad or SELECT changes the value |
 | VOLUME, PHONES | main and cue levels |

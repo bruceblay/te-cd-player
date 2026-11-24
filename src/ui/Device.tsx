@@ -1,7 +1,7 @@
 import { Fragment, useSyncExternalStore, useLayoutEffect, useRef, useState } from 'react'
 import type { Deck, DeckState } from '../engine/deck'
 import { readout } from '../engine/display'
-import { Jog, Key, Knob, Led, Print, U, VU, pos, u } from './controls'
+import { Jog, Key, Knob, Led, Print, U, VU, capturePointer, pos, u } from './controls'
 import { PlateArt, Turntable } from './PlateArt'
 import { SevenSeg } from './SevenSeg'
 
@@ -70,10 +70,10 @@ export function Device({
   const bt = BT_LED[on ? s.bt : 'off']
 
   return (
-    <div className="device-wrap" data-deck={index} role="group" aria-label={`Deck ${index + 1}`} onFocusCapture={onSelect} onPointerDownCapture={onSelect} ref={wrap}>
+    <div className="device-wrap" data-deck={index} data-flip={`deck-${index}`} role="group" aria-label={`Deck ${index + 1}`} onFocusCapture={onSelect} onPointerDownCapture={onSelect} ref={wrap}>
       <div
         className={`device ${on ? 'powered' : ''}`}
-        style={{ width: u(PW), height: u(PH), transform: `scale(${k})`, ['--u' as string]: `${U}px` }}
+        style={{ width: u(PW), height: u(PH), ['--k' as string]: k, ['--u' as string]: `${U}px` }}
       >
         <div className="plate" />
         <span className="hole" style={pos(143 - 25, 269 - 25, 50, 50)} />
@@ -93,7 +93,7 @@ export function Device({
           title="bluetooth (hold to pair)"
           aria-label="bluetooth"
           onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId)
+            capturePointer(e.currentTarget, e.pointerId)
             deck.btDown()
           }}
           onPointerUp={() => deck.btUp()}

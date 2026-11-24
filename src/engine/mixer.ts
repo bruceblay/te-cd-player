@@ -52,6 +52,7 @@ export interface MixerState {
   stick: number
   pad: number
   locked: boolean
+  lockArmed: boolean
   seq: 'idle' | 'armed' | 'rec' | 'play'
   selectHeld: boolean
   fxHeld: [boolean, boolean]
@@ -230,6 +231,11 @@ export class Mixer {
     { stick: 0, pad: 0 },
   ]
   private lockReleased = false
+  private lastActiveMod: { stick: number; pad: number } | null = null
+  private selectPointerDown = false
+  private selectDownAt = 0
+  private selectUsed = false
+  private selectUnlatchOnUp = false
   private recording: Sample[] = []
   private recStart = 0
   private recTargets: Ch[] = []
@@ -263,6 +269,7 @@ export class Mixer {
       stick: 0,
       pad: 0,
       locked: false,
+      lockArmed: false,
       seq: 'idle',
       selectHeld: false,
       fxHeld: [false, false],
@@ -463,13 +470,16 @@ export class Mixer {
   setGain(c: Ch, db: number) {
     this.setCh(c, { gain: Math.round(clamp(db, -24, 24) * 10) / 10 })
     this.applyCh(c)
+    if (this.s.selectHeld) this.selectUsed = true
     if (this.s.selectHeld && this.s.screen === 'main') this.flash(`GAIN ${this.fmtDb(this.s.ch[c].gain)}`, 900)
   }
   setPan(c: Ch, v: number) {
+    if (this.s.selectHeld) this.selectUsed = true
     this.setCh(c, { pan: Math.round(clamp(v, -1, 1) * 50) / 50 })
     this.applyCh(c)
   }
   setComp(c: Ch, amount: number, type: CompType) {
+    if (this.s.selectHeld) this.selectUsed = true
     this.setCh(c, { comp: clamp(amount, 0, 1), compType: type })
     this.applyCh(c)
     this.localOnly(c)
@@ -478,6 +488,10 @@ export class Mixer {
   gainTap(c: Ch) {
     const screen: Screen = this.s.selectHeld ? 'channel' : 'comp'
     const same = this.s.screen === screen && this.s.screenCh === c
+    if (this.s.selectHeld) {
+      this.selectUsed = true
+      if (this.s.seq === 'armed') this.set({ seq: 'idle' })
+    }
     this.set({ screen: same ? 'main' : screen, screenCh: c })
   }
   setEq(c: Ch, band: 'high' | 'mid' | 'low', v: number) {
@@ -488,11 +502,19 @@ export class Mixer {
   setFader(c: Ch, v: number) {
     this.setCh(c, { fader: clamp(v, 0, 1) })
     this.applyCh(c)
-    if (this.s.selectHeld) this.set({ screen: 'level', screenCh: c })
+    if (this.s.selectHeld) {
+      this.selectUsed = true
+      this.set({ screen: 'level', screenCh: c })
+    }
   }
 
   cueDown(c: Ch) {
-    if (this.s.selectHeld) return this.set({ screen: this.s.screen === 'tempo' ? 'main' : 'tempo' })
+    if (this.s.selectHeld) {
+      this.selectUsed = true
+      this.set({ screen: this.s.screen === 'tempo' ? 'main' : 'tempo' })
+      if (!this.selectPointerDown) this.clearSelect()
+      return
+    }
     if (this.s.screen === 'tempo') {
       this.tap(c)
       // holding cue on the tempo screen toggles tempo tracking for that channel
@@ -560,16 +582,66 @@ export class Mixer {
 
   /* ---------------- FX ---------------- */
 
+  openFxMenu(c?: Ch) {
+    const ch: Ch = c ?? (this.s.focus === 'both' ? 0 : this.s.focus)
+    this.stickZone = 0
+    if (this.s.screen !== 'fx') this.fxReturn = { screen: this.s.screen, screenCh: this.s.screenCh }
+    this.set({ focus: this.s.focus === 'both' && c === undefined ? 'both' : ch, screen: 'fx', screenCh: ch })
+  }
+  selectFx(fx: FxType, close = true) {
+    const c = this.s.screen === 'fx' ? this.s.screenCh : this.s.focus === 'both' ? 0 : this.s.focus
+    this.setCh(c, { fx })
+    this.applyCh(c)
+    if (close && this.s.screen === 'fx') this.set(this.fxReturn)
+  }
+  stepFx(delta: 1 | -1) {
+    const c = this.s.screen === 'fx' ? this.s.screenCh : this.s.focus === 'both' ? 0 : this.s.focus
+    const i = FX_TYPES.indexOf(this.s.ch[c].fx)
+    this.setCh(c, { fx: FX_TYPES[(i + delta + FX_TYPES.length) % FX_TYPES.length] })
+    this.applyCh(c)
+  }
+  focusFx(c: Ch) {
+    if (this.s.focus === c && this.s.screen === 'main') {
+      this.openFxMenu(c)
+      return
+    }
+    this.set({ focus: c, screen: 'main', screenCh: c })
+  }
+  toggleBothFx() {
+    this.set({ focus: this.s.focus === 'both' ? this.s.screenCh : 'both', screen: 'main' })
+  }
+  toggleSerial() {
+    const serial = !this.s.serial
+    this.set({ serial, screen: 'main' })
+    this.route()
+    this.flash(serial ? 'SERIAL FX' : 'PARALLEL FX')
+  }
+  toggleLock() {
+    if (this.s.locked || this.s.seq === 'play') {
+      this.lockReleased = false
+      this.lastActiveMod = null
+      for (const c of [0, 1] as Ch[]) this.mods[c] = { stick: 0, pad: 0 }
+      this.set({ locked: false, lockArmed: false, seq: 'idle', stick: 0, pad: 0 })
+      return
+    }
+    if (Math.abs(this.s.stick) > 0.02 || this.s.pad > 0.01) {
+      this.lockReleased = false
+      this.set({ locked: true, lockArmed: false })
+      return this.flash('LOCK')
+    }
+    this.lastActiveMod = null
+    this.set({ lockArmed: !this.s.lockArmed })
+  }
+
   fxDown(c: Ch) {
     const fxHeld = this.s.fxHeld.slice() as [boolean, boolean]
     fxHeld[c] = true
     this.set({ fxHeld })
     if (fxHeld[0] && fxHeld[1]) {
       if (this.s.selectHeld) {
-        const serial = !this.s.serial
-        this.set({ serial, screen: 'main' })
-        this.route()
-        return this.flash(serial ? 'SERIAL FX' : 'PARALLEL FX')
+        this.selectUsed = true
+        if (!this.selectPointerDown) this.clearSelect()
+        return this.toggleSerial()
       }
       return this.set({ focus: 'both', screen: 'main' })
     }
@@ -601,11 +673,7 @@ export class Mixer {
       return
     }
     if (this.s.screen === 'fx') {
-      if (!stepped) return
-      const c = this.s.screenCh
-      const i = FX_TYPES.indexOf(this.s.ch[c].fx)
-      this.setCh(c, { fx: FX_TYPES[(i + zone + FX_TYPES.length) % FX_TYPES.length] })
-      this.applyCh(c)
+      if (stepped) this.stepFx(zone as 1 | -1)
       return
     }
     this.modInput(stick, this.s.pad, stick !== prev)
@@ -624,6 +692,29 @@ export class Mixer {
     }
     this.modInput(this.s.stick, pad, pad !== prev)
   }
+  /** 2D force pad: drive MOD (stick) and pressure together with one pointer */
+  setMod(stickIn: number, padIn: number, lockOnRelease = false) {
+    const stick = clamp(stickIn, -1, 1)
+    const pad = clamp(padIn, 0, 1)
+    const moved = stick !== this.s.stick || pad !== this.s.pad
+    this.set({ stick, pad })
+    const down = pad > 0.3
+    const pressed = down && !this.padDown
+    this.padDown = down
+    if (this.s.screen === 'settings') {
+      if (pressed) this.changeSetting()
+      return
+    }
+    if (lockOnRelease && this.lastActiveMod && Math.abs(stick) <= 0.02 && pad <= 0.01) {
+      for (const c of this.targets()) this.mods[c] = this.lastActiveMod
+      this.lastActiveMod = null
+      this.lockReleased = true
+      this.set({ locked: true, lockArmed: false })
+      this.flash('LOCK')
+      return
+    }
+    this.modInput(stick, pad, moved)
+  }
 
   private targets(): Ch[] {
     return this.s.focus === 'both' ? [0, 1] : [this.s.focus]
@@ -639,33 +730,36 @@ export class Mixer {
         this.lockReleased = false
       } else return
     }
+    if (active) {
+      this.lastActiveMod = { stick, pad }
+    } else if (this.s.lockArmed && this.lastActiveMod) {
+      for (const c of this.targets()) this.mods[c] = this.lastActiveMod
+      this.lastActiveMod = null
+      this.lockReleased = true
+      this.set({ locked: true, lockArmed: false })
+      this.flash('LOCK')
+      return
+    }
     for (const c of this.targets()) this.mods[c] = { stick, pad }
     if (active) for (const c of this.targets()) this.localOnly(c, true)
     if (this.s.seq === 'armed' && active && moved) {
+      this.selectUsed = true
       this.recording = []
       this.recStart = performance.now()
       this.recTargets = this.targets()
       this.set({ seq: 'rec' })
     }
-    if (this.s.seq === 'rec') this.recording.push({ t: performance.now() - this.recStart, stick, pad })
-  }
-
-  selectDown() {
-    this.set({ selectHeld: true })
-    const { stick, pad } = this.s
-    if (Math.abs(stick) > 0.02 || pad > 0.01) {
-      // press select while modulating: hold the effect where it is
-      this.lockReleased = false
-      this.set({ locked: true })
-      return this.flash('LOCK')
+    if (this.s.seq === 'rec') {
+      this.recording.push({ t: performance.now() - this.recStart, stick, pad })
+      // when SELECT was clicked-to-latch (not held), releasing the pad/stick finishes the loop
+      if (!active && !this.selectPointerDown) {
+        this.finishSeq()
+        this.set({ selectHeld: false })
+      }
     }
-    if (this.s.screen === 'settings') return this.changeSetting()
-    if (this.s.seq === 'idle' || this.s.seq === 'play') this.set({ seq: 'armed' })
   }
-  selectUp() {
-    this.set({ selectHeld: false })
-    if (this.s.screen === 'level') this.set({ screen: 'main' })
-    if (this.s.seq === 'rec' && this.recording.length > 1) {
+  private finishSeq() {
+    if (this.recording.length > 1) {
       // loop length: what was recorded, rounded to whole beats (1..8)
       const beat = 60000 / this.bpmFor(this.recTargets[0])
       const dur = performance.now() - this.recStart
@@ -673,10 +767,65 @@ export class Mixer {
       this.playStart = performance.now()
       this.set({ seq: 'play' })
       this.flash('FX SEQ', 800)
-    } else if (this.s.seq === 'armed' || this.s.seq === 'rec') this.set({ seq: 'idle' })
+    } else {
+      this.set({ seq: 'idle' })
+    }
+  }
+  private clearSelect() {
+    const patch: Partial<MixerState> = { selectHeld: false }
+    if (this.s.screen === 'level') patch.screen = 'main'
+    if (this.s.seq === 'armed') patch.seq = 'idle'
+    this.set(patch)
+  }
+
+  selectDown() {
+    this.selectPointerDown = true
+    this.selectUnlatchOnUp = false
+    const { stick, pad } = this.s
+    if (Math.abs(stick) > 0.02 || pad > 0.01) {
+      // press select while modulating: hold the effect where it is
+      this.selectUsed = true
+      this.lockReleased = false
+      this.set({ selectHeld: true, locked: true, lockArmed: false })
+      return this.flash('LOCK')
+    }
+    if (this.s.screen === 'settings') {
+      this.selectUsed = true
+      this.set({ selectHeld: true })
+      return this.changeSetting()
+    }
+    if (this.s.selectHeld) {
+      this.selectUnlatchOnUp = true
+      this.clearSelect()
+      return
+    }
+    this.selectDownAt = performance.now()
+    this.selectUsed = false
+    this.set({ selectHeld: true })
+    if (this.s.seq === 'idle' || this.s.seq === 'play') this.set({ seq: 'armed' })
+  }
+  selectUp() {
+    this.selectPointerDown = false
+    if (this.selectUnlatchOnUp) {
+      this.selectUnlatchOnUp = false
+      return
+    }
+    if (this.s.seq === 'rec') {
+      this.finishSeq()
+      this.set({ selectHeld: false })
+      return
+    }
+    const quickTap = performance.now() - this.selectDownAt < 350 && !this.selectUsed
+    if (quickTap) return // stay latched for one-handed shift / sequencer use
+    this.clearSelect()
   }
 
   /* ---------------- system settings ---------------- */
+
+  selectSetting(index: number) {
+    this.set({ settingsIndex: index })
+    this.changeSetting()
+  }
 
   systemPress() {
     const open = this.s.screen !== 'settings'
