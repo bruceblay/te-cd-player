@@ -225,6 +225,7 @@ export function Device({
           min={50}
           max={150}
           label="varispeed"
+          disabled={deck.varispeedBlocked()}
           onChange={(v) => deck.setVarispeed(v)}
           onReset={() => deck.setVarispeed(100)}
         />

@@ -107,6 +107,7 @@ export function Knob({
   onReset,
   onTap,
   label,
+  disabled,
 }: {
   x: number
   y: number
@@ -122,6 +123,8 @@ export function Knob({
   /** a click without turning (the sidekick's gain knobs push) */
   onTap?: () => void
   label: string
+  /** why the knob can't be used right now; shown as its tooltip */
+  disabled?: string | null
 }) {
   const drag = useRef<{ y: number; v: number; moved: boolean } | null>(null)
   const frac = (value - min) / (max - min)
@@ -129,14 +132,17 @@ export function Knob({
   const inset = u((size - cap) / 2)
   return (
     <div
-      className={`knob ${className}`}
+      className={`knob ${className}${disabled ? ' disabled' : ''}`}
       role="slider"
       aria-label={label}
+      aria-disabled={disabled ? true : undefined}
+      title={disabled ?? undefined}
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={value}
       style={pos(x, y, size, size)}
       onPointerDown={(e) => {
+        if (disabled) return
         capturePointer(e.currentTarget, e.pointerId)
         drag.current = { y: e.clientY, v: value, moved: false }
       }}
@@ -159,7 +165,7 @@ export function Knob({
       }}
       onPointerCancel={() => (drag.current = null)}
       onLostPointerCapture={() => (drag.current = null)}
-      onDoubleClick={onReset}
+      onDoubleClick={disabled ? undefined : onReset}
     >
       <div className="knob-shadow" style={{ inset }} />
       {/* the cap and its lit/shaded sides stay put; only the indicator turns */}

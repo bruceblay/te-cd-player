@@ -23,6 +23,8 @@ type ControlActionBase =
       setValue: (v: number) => void
       onTap?: () => void
       onReset?: () => void
+      /** why the knob can't be used right now */
+      disabled?: () => string | null
     }
   | {
       kind: 'fader'

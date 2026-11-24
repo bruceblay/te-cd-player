@@ -650,6 +650,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     setValue: (v: number) => void
     onReset?: () => void
     midi?: string
+    disabled?: () => string | null
   }) => {
     const cx = dx(opts.x + 17)
     const cz = dz(opts.y + 17)
@@ -744,6 +745,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
       setValue: opts.setValue,
       onReset: opts.onReset,
       midi: opts.midi,
+      disabled: opts.disabled,
     })
     group.add(rotor)
     return rotor
@@ -766,6 +768,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     setValue: (v) => deck.setVarispeed(v),
     onReset: () => deck.setVarispeed(100),
     midi: `d${deckIndex}.varispeed`,
+    disabled: () => deck.varispeedBlocked(),
   })
 
   // Warm off-white satin LEVEL knob (uniform 17u diameter × 1.18 tall)

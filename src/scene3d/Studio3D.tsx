@@ -466,6 +466,7 @@ export function Studio3D({
       } else if (ctrl.kind === 'oled') {
         if (hit.uv) ctrl.onClickUv(hit.uv.x, hit.uv.y)
       } else if (ctrl.kind === 'knob') {
+        if (ctrl.disabled?.()) return
         const now = performance.now()
         if (lastTapKnob && lastTapKnob.action === ctrl && now - lastTapKnob.time < 320 && ctrl.onReset) {
           ctrl.onReset()
@@ -488,8 +489,12 @@ export function Studio3D({
     const onPointerMove = (e: PointerEvent) => {
       if (!activeDrag) {
         const picked = pickControl(e.clientX, e.clientY)
+        const blocked = picked?.ctrl.kind === 'knob' ? picked.ctrl.disabled?.() : null
+        renderer.domElement.title = blocked ?? ''
         if (!picked) {
           renderer.domElement.style.cursor = 'grab'
+        } else if (blocked) {
+          renderer.domElement.style.cursor = 'not-allowed'
         } else {
           const k = picked.ctrl.kind
           renderer.domElement.style.cursor =
