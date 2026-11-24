@@ -314,10 +314,10 @@ export function clearGearOverlap(props: PlacedProp[]): PlacedProp[] {
   return props.map((p) => moved.get(p.id) ?? p)
 }
 
-export function createInitialProps(): PlacedProp[] {
+export function createInitialProps(deckCount: 1 | 2 = 2, mixerOn = true): PlacedProp[] {
   const placed: PlacedProp[] = []
   for (const id of DEFAULT_IDS) placed.push(randomSafeSpot(id, placed))
-  return ensureProps3D(placed, 2, true)
+  return ensureProps3D(placed, deckCount, mixerOn)
 }
 
 export function spawnProp(id: PropId, existing: PlacedProp[], deckCount: 1 | 2 = 2, mixerOn = true): PlacedProp {
@@ -457,7 +457,7 @@ export function ensureProps3D(props: PlacedProp[], deckCount: 1 | 2, mixerOn: bo
     }
     if (needsSpot) {
       const spot = randomSafeSpot3D(p.id, placed, deckCount, mixerOn)
-      const next: PlacedProp = { ...p, x3d: spot.x3d, z3d: spot.z3d }
+      const next: PlacedProp = { ...p, x3d: spot.x3d, z3d: spot.z3d, rot: spot.rot }
       placed.push(next)
       changed = true
     } else {
@@ -470,7 +470,7 @@ export function ensureProps3D(props: PlacedProp[], deckCount: 1 | 2, mixerOn: bo
         p.z3d! - rz < rigHD + 0.4
       if (inRig && !hasCoords) {
         const spot = randomSafeSpot3D(p.id, placed, deckCount, mixerOn)
-        placed.push({ ...p, x3d: spot.x3d, z3d: spot.z3d })
+        placed.push({ ...p, x3d: spot.x3d, z3d: spot.z3d, rot: spot.rot })
         changed = true
       } else {
         placed.push(p)

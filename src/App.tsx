@@ -141,32 +141,38 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const drawerOpenRef = useRef(false)
   drawerOpenRef.current = drawerOpen
-  const [view, setView] = useState<ViewMode>(readViewMode)
-  useEffect(() => {
-    saveViewMode(view)
-  }, [view])
-  const [surface, setSurface] = useState<SurfaceMode>(readSurface)
-  useEffect(() => {
-    saveSurface(surface)
-  }, [surface])
+  const [view, setViewState] = useState<ViewMode>(readViewMode)
+  const setView = (next: ViewMode) => {
+    setViewState(next)
+    saveViewMode(next)
+  }
+  const [surface, setSurfaceState] = useState<SurfaceMode>(readSurface)
+  const setSurface = (next: SurfaceMode) => {
+    setSurfaceState(next)
+    saveSurface(next)
+  }
   const [handsOn, setHandsOn] = useState(false)
   const [handStyle, setHandStyle] = useState<HandStyle>(readHandStyle)
   const [handStatus, setHandStatus] = useState<HandStatus>({ state: 'off', hands: 0 })
   useEffect(() => {
     saveHandStyle(handStyle)
   }, [handStyle])
-  const [propsOn, setPropsOn] = useState(readPropsEnabled)
-  useEffect(() => {
-    savePropsEnabled(propsOn)
-  }, [propsOn])
+  const [propsOn, setPropsOnState] = useState(readPropsEnabled)
+  const setPropsOn = (next: boolean) => {
+    setPropsOnState(next)
+    savePropsEnabled(next)
+  }
   const [props, setProps] = useState<PlacedProp[] | null>(readSavedProps)
+  const [layout, setLayout] = useState<LayoutConfig>(readLayout)
+  const deckCount = layout.decks
+  const mixerOn = deckCount === 2 || layout.sidekick
   // On first load (no saved positions), scatter randomly outside the live gear bounds and persist
   useLayoutEffect(() => {
     if (props !== null) return
-    const initial = createInitialProps()
+    const initial = createInitialProps(deckCount, mixerOn)
     setProps(initial)
     saveProps(initial)
-  }, [props])
+  }, [props, deckCount, mixerOn])
   useEffect(() => {
     if (props !== null) saveProps(props)
   }, [props])
@@ -188,9 +194,6 @@ export default function App() {
   const updateProps = (updater: (cur: PlacedProp[]) => PlacedProp[]) => {
     setProps((cur) => updater(cur ?? []))
   }
-  const [layout, setLayout] = useState<LayoutConfig>(readLayout)
-  const deckCount = layout.decks
-  const mixerOn = deckCount === 2 || layout.sidekick
   const toggleProp = (id: PropId) => {
     updateProps((cur) =>
       cur.some((p) => p.id === id) ? cur.filter((p) => p.id !== id) : [...cur, spawnProp(id, cur, deckCount, mixerOn)],
