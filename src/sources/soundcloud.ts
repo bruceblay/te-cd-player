@@ -49,7 +49,7 @@ export class SoundCloudSource implements Source {
     const params = new URLSearchParams({
       url,
       auto_play: 'false',
-      visual: 'true',
+      // no visual mode: the visual player never fetches a set's titles past the first five
       hide_related: 'true',
       show_comments: 'false',
       show_reposts: 'false',
@@ -146,6 +146,18 @@ export class SoundCloudSource implements Source {
         artwork: s.artwork_url ? String(s.artwork_url).replace('-large', '-t500x500') : undefined,
       })),
     }
+  }
+
+  /** a set's titles beyond the first few arrive a moment after load; wait for them (up to `ms`) */
+  async allTitles(ms = 6000): Promise<{ title?: string; duration?: number }[]> {
+    const read = () =>
+      new Promise<any[]>((r) => (this.widget ? this.widget.getSounds((s: any[]) => r(s ?? [])) : r([])))
+    let sounds = await read()
+    for (let waited = 0; sounds.some((s) => !s?.title) && waited < ms; waited += 500) {
+      await new Promise((r) => setTimeout(r, 500))
+      sounds = await read()
+    }
+    return sounds.map((s) => ({ title: s?.title, duration: s?.duration ? s.duration / 1000 : undefined }))
   }
 
   async cue(track: number, at: number, autoplay: boolean) {

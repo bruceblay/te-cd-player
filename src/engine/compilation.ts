@@ -69,10 +69,19 @@ export async function resolveLink(url: string, mount: HTMLElement): Promise<{ ti
     const src = new SoundCloudSource(url, mount, noop)
     try {
       const disc = await src.load()
-      const o = disc.tracks.length > 1 ? await oembed(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(url)}`) : null
+      const [o, later] = disc.tracks.length > 1
+        ? await Promise.all([oembed(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(url)}`), src.allTitles()])
+        : [null, []]
       return {
         title: o?.title ?? disc.title,
-        items: disc.tracks.map((t, i) => ({ kind: 'soundcloud', key: key(), url, index: i, title: t.title, duration: t.duration || undefined })),
+        items: disc.tracks.map((t, i) => ({
+          kind: 'soundcloud',
+          key: key(),
+          url,
+          index: i,
+          title: later[i]?.title || t.title,
+          duration: later[i]?.duration || t.duration || undefined,
+        })),
       }
     } finally {
       src.destroy()

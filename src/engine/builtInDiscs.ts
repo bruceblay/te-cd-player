@@ -14,7 +14,7 @@ type BuiltIn = { id: string; title: string; color: string } & (
 
 export const BUILT_IN_DISCS: BuiltIn[] = [
   { id: 'builtin:oil-and-cotton', title: 'oil and cotton', color: '#ff5a1f', url: 'https://www.youtube.com/playlist?list=PLFBFAAB01A2CF4DB6' },
-  { id: 'builtin:uli', title: 'ULI', color: '#1d1d1f', url: 'https://soundcloud.com/meltingseason' },
+  { id: 'builtin:uli', title: 'ULI', color: '#1d1d1f', url: 'https://soundcloud.com/meltingseason/sets/uli' },
   {
     id: 'builtin:headphone-wonders',
     title: 'Headphone Wonders',
