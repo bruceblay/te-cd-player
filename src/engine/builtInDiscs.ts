@@ -23,9 +23,11 @@ export const BUILT_IN_DISCS: BuiltIn[] = [
     color: '#c9cbd0',
     audio: [
       ['/discs/untitled/01.m4a', '1', 443],
-      ['/discs/untitled/02.m4a', '2', 480],
-      ['/discs/untitled/03.m4a', '3', 483],
-      ['/discs/untitled/04.m4a', '4', 220],
+      ['/discs/untitled/02.m4a', '2', 331],
+      ['/discs/untitled/03.m4a', '3', 185],
+      ['/discs/untitled/04.m4a', '4', 480],
+      ['/discs/untitled/05.m4a', '5', 483],
+      ['/discs/untitled/06.m4a', '6', 220],
     ],
   },
   {
