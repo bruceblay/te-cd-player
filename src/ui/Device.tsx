@@ -1,9 +1,10 @@
-import { Fragment, useSyncExternalStore, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useSyncExternalStore, useLayoutEffect, useRef, useState } from 'react'
 import type { Deck, DeckState } from '../engine/deck'
 import { readout } from '../engine/display'
 import { Jog, Key, Knob, Led, Print, U, VU, capturePointer, pos, u } from './controls'
 import { PlateArt, Turntable } from './PlateArt'
 import { SevenSeg } from './SevenSeg'
+import { drawDiscPrint, spinBlur, SPIN_BLUR_DEG } from './discArt'
 
 // plate size in diagram units (teenage engineering's BC-1 top view)
 const PW = 370
@@ -124,6 +125,7 @@ export function Device({
         >
           <div className={`disc-face ${spinning ? 'spin' : ''}`}>
             {s.disc && <DiscPrint disc={s.disc} />}
+            {s.disc && <DiscBlur disc={s.disc} />}
           </div>
           <span className="disc-shine" />
           <span className="disc-hub" />
@@ -255,6 +257,26 @@ const LIGHT = new Set(['#c9cbd0', '#ece6d6'])
 const TITLE_MAX = 23
 const TRACK_MAX = 22
 const TRACK_MAX_NO_TIME = 26
+
+/**
+ * The print smeared around the centre, shown while the disc spins: a real disc's
+ * print blurs into arcs, where the crisp print just strobes from frame to frame.
+ */
+function DiscBlur({ disc }: { disc: NonNullable<DeckState['disc']> }) {
+  const [src, setSrc] = useState<string | null>(null)
+  const key = `${disc.title}|${disc.color ?? ''}|${disc.tracks.map((t) => `${t.title}:${t.duration}`).join(',')}`
+  useEffect(() => {
+    let live = true
+    void document.fonts.ready.then(() => {
+      if (live) setSrc(spinBlur(drawDiscPrint(disc, 512, false), SPIN_BLUR_DEG).toDataURL())
+    })
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+  return src ? <img className="disc-blur" src={src} alt="" aria-hidden /> : null
+}
 
 /**
  * A burned disc: one solid colour, printed with its title and track list in

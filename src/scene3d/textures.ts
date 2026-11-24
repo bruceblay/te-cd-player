@@ -6,6 +6,7 @@ import type { DeckState } from '../engine/deck'
 import { readout } from '../engine/display'
 import { SETTINGS, type MixerState } from '../engine/mixer'
 import { FX_TYPES } from '../engine/sidekickFx'
+import { drawDiscPrint, spinBlur, SPIN_BLUR_DEG } from '../ui/discArt'
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -606,79 +607,18 @@ export function createBc1DisplayUpdater() {
 
 /* ---------------- 3. BC-1 Printed Burned CD Texture ---------------- */
 
-const LIGHT_DISC = new Set(['#c9cbd0', '#ece6d6'])
-
 export function createDiscTexture(disc: NonNullable<DeckState['disc']>): THREE.CanvasTexture {
-  const S = 1024
-  const c = document.createElement('canvas')
-  c.width = S
-  c.height = S
-  const ctx = c.getContext('2d')!
-  const cx = S / 2
-  const cy = S / 2
-  const R = S / 2
-
-  ctx.clearRect(0, 0, S, S)
-
-  // Clear polycarbonate inner hub (real 15 mm CD hole = 12.4% of radius..29.6%)
-  ctx.save()
-  ctx.beginPath()
-  ctx.arc(cx, cy, R * 0.296, 0, Math.PI * 2)
-  ctx.arc(cx, cy, R * 0.124, 0, Math.PI * 2, true)
-  ctx.fillStyle = 'rgba(220, 224, 232, 0.32)'
-  ctx.fill('evenodd')
-  ctx.beginPath()
-  ctx.arc(cx, cy, R * 0.21, 0, Math.PI * 2)
-  ctx.strokeStyle = 'rgba(255,255,255,0.45)'
-  ctx.lineWidth = 3.5
-  ctx.stroke()
-  ctx.restore()
-
-  const color = disc.color ?? '#22468c'
-  const ink = LIGHT_DISC.has(color) ? '#1c1c1e' : '#f8f8f6'
-  ctx.save()
-  ctx.beginPath()
-  ctx.arc(cx, cy, R * 0.996, 0, Math.PI * 2)
-  ctx.arc(cx, cy, R * 0.296, 0, Math.PI * 2, true)
-  ctx.fillStyle = color
-  ctx.fill('evenodd')
-
-  const u = S / 100
-  const tracks = disc.tracks
-  const slots = [22.2, 25.8, 29.4, 33, 69.4, 73, 76.6, 80.2, 83.8]
-  const fits = tracks.length <= slots.length ? tracks.length : slots.length - 1
-  const w = Math.max(2, String(tracks.length).length)
-  const titleX = (w > 2 ? 26 : 24) * u
-  const clip = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1)}…` : t)
-  const time = (d: number) => (d > 0 ? `${Math.floor(d / 60)}:${String(Math.floor(d % 60)).padStart(2, '0')}` : '')
-
-  ctx.fillStyle = ink
-  ctx.font = `600 ${3.4 * u}px "Manrope", "Helvetica Neue", sans-serif`
-  ctx.textAlign = 'left'
-  ctx.fillText(clip(disc.title.toUpperCase(), 23), 19 * u, 17.8 * u)
-
-  ctx.font = `600 ${2.75 * u}px "Manrope", "Helvetica Neue", sans-serif`
-  for (let i = 0; i < fits; i++) {
-    const t = tracks[i]
-    const y = slots[i] * u
-    const dur = time(t.duration)
-    ctx.textAlign = 'left'
-    ctx.fillText(String(i + 1).padStart(w, '0'), 19 * u, y)
-    ctx.fillText(clip(t.title.toUpperCase(), dur ? 22 : 26), titleX, y)
-    if (dur) {
-      ctx.textAlign = 'right'
-      ctx.fillText(dur, 81 * u, y)
-    }
-  }
-  if (tracks.length > fits) {
-    ctx.textAlign = 'left'
-    ctx.fillText(`+ ${tracks.length - fits} MORE`, 19 * u, slots[slots.length - 1] * u)
-  }
-  ctx.restore()
-
-  const tex = new THREE.CanvasTexture(c)
+  const tex = new THREE.CanvasTexture(drawDiscPrint(disc, 1024, true))
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 16
+  return tex
+}
+
+/** the same print smeared around the centre, faded in over the crisp one while the disc spins */
+export function createDiscBlurTexture(disc: NonNullable<DeckState['disc']>): THREE.CanvasTexture {
+  const tex = new THREE.CanvasTexture(spinBlur(drawDiscPrint(disc, 512, true), SPIN_BLUR_DEG))
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 8
   return tex
 }
 

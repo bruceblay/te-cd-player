@@ -9,6 +9,7 @@ import {
 import {
   createBc1DisplayUpdater,
   createBc1PlateTexture,
+  createDiscBlurTexture,
   createDiscTexture,
   createKeyLabelTexture,
   createTurntableTexture,
@@ -927,6 +928,25 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
   discTop.receiveShadow = true
   discGroup.add(discTop)
 
+  // The print smeared around the centre, faded in with spin speed: a real disc's
+  // print blurs into arcs, where a crisp texture just strobes from frame to frame
+  const discBlurMat = trackMat(
+    new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      roughness: 0.16,
+      metalness: 0.08,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.06,
+    }),
+  )
+  const discBlur = new THREE.Mesh(discTop.geometry, discBlurMat)
+  discBlur.position.y = 0.057
+  discBlur.visible = false
+  discGroup.add(discBlur)
+
   // Clear polycarbonate edge rim
   const discRim = new THREE.Mesh(
     trackGeo(new THREE.CylinderGeometry(DISC_R, DISC_R, 0.11, 72, 1, true)),
@@ -958,6 +978,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
 
   let activeDiscKey = ''
   let activeDiscTex: THREE.CanvasTexture | null = null
+  let activeBlurTex: THREE.CanvasTexture | null = null
   let spinAngle = 0
   let spinOmega = 0
   let lastDisplayUpdate = 0
@@ -982,6 +1003,9 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     } else {
       spinOmega = 0
     }
+    const blur = Math.min(1, Math.abs(spinOmega) / ((Math.PI * 2) / 0.32))
+    discBlurMat.opacity = blur
+    discBlur.visible = blur > 0.01
 
     if (s.disc) {
       discGroup.visible = true
@@ -992,6 +1016,10 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
         activeDiscTex = createDiscTexture(s.disc)
         discTopMat.map = activeDiscTex
         discTopMat.needsUpdate = true
+        activeBlurTex?.dispose()
+        activeBlurTex = createDiscBlurTexture(s.disc)
+        discBlurMat.map = activeBlurTex
+        discBlurMat.needsUpdate = true
       }
     } else {
       discGroup.visible = false
@@ -1044,6 +1072,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     dispose() {
       displays.dispose()
       activeDiscTex?.dispose()
+      activeBlurTex?.dispose()
       disposables.forEach((d) => d.dispose())
       geometries.forEach((g) => g.dispose())
       materials.forEach((m) => m.dispose())

@@ -571,6 +571,19 @@ button {
   width: 100%;
   height: 100%;
 }
+/* the smeared print covers the crisp one while the disc spins */
+.disc-blur {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+}
+.disc-face.spin .disc-blur {
+  opacity: 1;
+  transition-duration: 0.25s;
+}
 /* small capitals, like the printing on TE's utility disc */
 .disc-type text {
   font-family: 'Manrope', 'Helvetica Neue', Helvetica, Arial, sans-serif;
