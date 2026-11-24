@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>stream fx</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        color: #232321;
+        background: #e6e3dc;
+      }
+      body {
+        margin: 0;
+        padding: 18px 20px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      h1::before {
+        content: '';
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ff5a1f;
+      }
+      p {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.45;
+        color: #6f6c65;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>stream fx</h1>
+    <p>The mixer’s sound plays from this window. Keep it open (minimised is fine). Close it to stop.</p>
+    <audio></audio>
+  </body>
+</html>

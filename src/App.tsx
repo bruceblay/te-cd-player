@@ -443,6 +443,7 @@ export default function App() {
         onClearProps={() => setProps([])}
         spotifyIn={spotifyIn}
         spotifyProfile={spotifyProfile}
+        mixer={mixerOn ? getMixer() : null}
         onSpotifyOut={() => {
           setSpotifyIn(false)
           setSpotifyProfile(null)

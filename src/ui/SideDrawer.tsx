@@ -5,6 +5,8 @@ import {
   type SpotifyProfile,
 } from '../sources/spotifyAuth'
 import { MidiSection } from './MidiLearn'
+import { StreamFxSection } from './StreamFx'
+import type { Mixer } from '../engine/mixer'
 import { PROP_CATALOG, type PlacedProp, type PropId } from './DeskProps'
 import { HAND_STYLES, type HandStyle } from './handRender'
 import type { HandStatus } from './HandTracker'
@@ -103,6 +105,7 @@ export function SideDrawer({
   spotifyIn,
   spotifyProfile,
   onSpotifyOut,
+  mixer,
 }: {
   open: boolean
   onOpen: () => void
@@ -125,6 +128,7 @@ export function SideDrawer({
   spotifyIn: boolean
   spotifyProfile: SpotifyProfile | null
   onSpotifyOut: () => void
+  mixer: Mixer | null
 }) {
   const activeProps = new Set(props.map((p) => p.id))
   const spotifyReady = spotifyConfigured()
@@ -300,6 +304,7 @@ export function SideDrawer({
         )}
 
         <MidiSection open={open} onLearn={onClose} />
+        <StreamFxSection mixer={mixer} open={open} />
 
         {view === '2d' && (
           <section className="drawer-section drawer-divider">

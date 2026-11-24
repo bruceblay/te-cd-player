@@ -3,17 +3,21 @@
  * slots, cue bus, tempo per channel and an FX automation sequencer.
  *
  * Only audio the page owns can be processed, so EQ / compressor / pan / FX work
- * on local files. A streaming deck (YouTube, SoundCloud, Spotify) still follows
- * its fader, gain cut and the main volume through the player's own volume.
+ * on local files. A streaming deck (YouTube, SoundCloud, Spotify) follows its
+ * fader, gain cut and the main volume through the player's own volume, unless
+ * stream FX is on: then the tab's own audio is captured (getDisplayMedia) and
+ * runs through the channel strip like a local file.
  */
 import type { Deck } from './deck'
 import { FX_TYPES, FxSlot, type FxType } from './sidekickFx'
-import { audioContext, clamp } from './util'
+import { audioContext, clamp, waitFor } from './util'
 
 export type EqStyle = 'dj' | 'studio' | 'param'
 export type CompType = 'glue' | 'punch' | 'limit'
 export type Screen = 'main' | 'channel' | 'comp' | 'tempo' | 'fx' | 'settings' | 'level'
 export type Input = 'local' | 'stream' | null
+/** where captured stream audio goes: one stream's channel or aux, or the main mix when several streams share it */
+export type CaptureRoute = '0' | '1' | 'aux' | 'sum' | 'none'
 type Ch = 0 | 1
 /** where a cable from a deck is plugged in: a channel, the aux input, or nowhere */
 export type Jack = Ch | 'aux' | null
@@ -59,6 +63,9 @@ export interface MixerState {
   settingsIndex: number
   message: string | null
   masterMeter: [number, number]
+  streamFx: 'off' | 'starting' | 'on'
+  streamFxError: string | null
+  captureRoute: CaptureRoute
 }
 
 export const SETTINGS = ['EQ', 'TEMPO', 'CUE OUT'] as const
@@ -216,6 +223,15 @@ export class Mixer {
   private phonesGain: GainNode
   private cueDest: MediaStreamAudioDestinationNode
   private cueEl: HTMLAudioElement | null = null
+  private readonly capIn: GainNode
+  private cap: {
+    stream: MediaStream
+    src: MediaStreamAudioSourceNode
+    out: MediaStreamAudioDestinationNode
+    win: Window
+    el: HTMLAudioElement
+    watch: number
+  } | null = null
   private masterMeters: [AnalyserNode, AnalyserNode]
   private meterSplit: ChannelSplitterNode
   private mbuf = new Float32Array(512)
@@ -276,6 +292,9 @@ export class Mixer {
       settingsIndex: 0,
       message: null,
       masterMeter: [0, 0],
+      streamFx: 'off',
+      streamFxError: null,
+      captureRoute: 'none',
     }
     this.strips = [new Strip(ctx), new Strip(ctx)]
     this.masterSum = new GainNode(ctx)
@@ -288,6 +307,7 @@ export class Mixer {
     this.auxIn = new GainNode(ctx)
     this.masterMeters = [new AnalyserNode(ctx, { fftSize: 512 }), new AnalyserNode(ctx, { fftSize: 512 })]
     this.meterSplit = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 })
+    this.capIn = new GainNode(ctx)
     this.masterGain.connect(ctx.destination)
     this.masterGain.connect(this.meterSplit)
     this.meterSplit.connect(this.masterMeters[0], 0)
@@ -329,10 +349,7 @@ export class Mixer {
 
   private running() {
     if (this.timer !== undefined) return
-    this.masterGain.disconnect()
-    this.masterGain.connect(this.ctx.destination)
-    this.masterGain.connect(this.meterSplit)
-    this.masterGain.connect(this.mainCueSend)
+    this.connectMain()
     this.timer = window.setInterval(() => this.tick(), 30)
     if (this.s.cueOut) void this.cueEl?.play()
   }
@@ -355,9 +372,18 @@ export class Mixer {
       deck.bus.connect(this.strips[jack].input)
     }
     this.applyStreamGain()
+    this.routeCapture()
+  }
+  /** the main mix goes to the speakers, or to the stream FX window while the tab is captured */
+  private connectMain() {
+    this.masterGain.disconnect()
+    this.masterGain.connect(this.cap ? this.cap.out : this.ctx.destination)
+    this.masterGain.connect(this.meterSplit)
+    this.masterGain.connect(this.mainCueSend)
   }
   /** take the mixer away: every deck gets its speakers back */
   detach() {
+    this.stopStreamFx()
     for (const d of this.known) {
       d.bus.disconnect()
       d.bus.connect(this.ctx.destination)
@@ -420,16 +446,140 @@ export class Mixer {
     this.phonesGain.gain.setTargetAtTime(this.s.phones * this.s.phones, t, 0.02)
     this.applyStreamGain()
   }
-  /** a streaming deck can only follow the volume path: fader x gain cut x main */
+  /**
+   * A streaming deck can only follow the volume path: fader x gain cut x main.
+   * Captured, the main volume is in the mix; a stream with its own channel gets
+   * everything from the strip and plays at full level.
+   */
   private applyStreamGain() {
-    const main = this.s.power ? this.s.master * this.s.master : 0
+    const route = this.cap ? this.s.captureRoute : null
+    const main = route ? 1 : this.s.power ? this.s.master * this.s.master : 0
     for (const d of this.known) {
       const i = this.decks.indexOf(d)
       if (i >= 0) {
         const ch = this.s.ch[i]
-        d.setMixGain(ch.fader * ch.fader * Math.min(1, dbToLin(ch.gain)) * main)
+        d.setMixGain(route === String(i) ? 1 : ch.fader * ch.fader * Math.min(1, dbToLin(ch.gain)) * main)
       } else d.setMixGain(d === this.auxDeck ? main : 0) // unplugged: silent
     }
+  }
+
+  /* ---------------- stream FX: capture this tab's audio ---------------- */
+
+  /** true when a channel's audio actually runs through its strip */
+  private processed(c: Ch) {
+    return this.s.inputs[c] !== 'stream' || (!!this.cap && this.s.captureRoute === String(c))
+  }
+
+  private captureRouteNow(): CaptureRoute {
+    const streaming = (d: Deck | null) => !!d?.sourceKind && d.sourceKind !== 'local'
+    const slots: CaptureRoute[] = []
+    this.decks.forEach((d, i) => streaming(d) && slots.push(String(i) as CaptureRoute))
+    if (streaming(this.auxDeck)) slots.push('aux')
+    return slots.length === 1 ? slots[0] : slots.length ? 'sum' : 'none'
+  }
+
+  /** captured audio holds every player at once, so it can only feed one strip */
+  private routeCapture(force = false) {
+    if (!this.cap) return
+    const route = this.captureRouteNow()
+    if (route === this.s.captureRoute && !force) return
+    this.capIn.disconnect()
+    if (route === '0' || route === '1') this.capIn.connect(this.strips[+route].input)
+    else if (route === 'aux') this.capIn.connect(this.auxIn)
+    else if (route === 'sum') this.capIn.connect(this.masterSum)
+    this.set({ captureRoute: route })
+    this.applyStreamGain()
+  }
+
+  /**
+   * Capture this tab's audio so streams can be processed. Everything the tab
+   * plays is captured and kept off the speakers, so the processed mix has to
+   * play from another window, a small pop-up that stays open while it runs.
+   */
+  async startStreamFx() {
+    if (this.cap || this.s.streamFx === 'starting') return
+    const fail = (msg: string) => this.set({ streamFx: 'off', streamFxError: msg })
+    if (!navigator.mediaDevices?.getDisplayMedia) return fail('this browser can’t capture tab audio')
+    this.set({ streamFx: 'starting', streamFxError: null })
+    const win = window.open('/stream-fx.html', 'bc1-stream-fx', 'popup,width=360,height=200')
+    if (!win) return fail('pop-ups are blocked: allow them for this site and try again')
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: { suppressLocalAudioPlayback: true, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        preferCurrentTab: true,
+        selfBrowserSurface: 'include',
+        surfaceSwitching: 'exclude',
+        systemAudio: 'exclude',
+      } as DisplayMediaStreamOptions)
+    } catch (e) {
+      win.close()
+      return fail((e as Error).name === 'NotAllowedError' ? 'sharing was cancelled' : 'this tab couldn’t be captured')
+    }
+    const video = stream.getVideoTracks()
+    const surface = video[0]?.getSettings().displaySurface
+    video.forEach((t) => t.stop())
+    const track = stream.getAudioTracks()[0]
+    const bail = (msg: string) => {
+      stream.getTracks().forEach((t) => t.stop())
+      win.close()
+      fail(msg)
+    }
+    if (surface && surface !== 'browser') return bail('share this tab, not a window or screen')
+    if (!track) return bail('no audio: keep “share tab audio” switched on')
+    let el: HTMLAudioElement
+    try {
+      el = await waitFor(() => (win.closed ? null : win.document.querySelector('audio')), 5000)
+    } catch {
+      return bail('the stream FX window didn’t open')
+    }
+    const ctx = this.ctx
+    const out = new MediaStreamAudioDestinationNode(ctx)
+    el.srcObject = out.stream
+    void el.play().catch(() => {})
+    const src = ctx.createMediaStreamSource(new MediaStream([track]))
+    src.connect(this.capIn)
+    track.addEventListener('ended', () => this.stopStreamFx())
+    const watch = window.setInterval(() => win.closed && this.stopStreamFx(), 500)
+    this.cap = { stream, src, out, win, el, watch }
+    window.addEventListener('pagehide', () => this.stopStreamFx(), { once: true })
+    this.connectMain()
+    this.moveCue()
+    this.set({ streamFx: 'on' })
+    this.routeCapture(true)
+  }
+
+  stopStreamFx() {
+    const c = this.cap
+    if (!c) {
+      if (this.s.streamFx !== 'off') this.set({ streamFx: 'off' })
+      return
+    }
+    this.cap = null
+    clearInterval(c.watch)
+    c.stream.getTracks().forEach((t) => t.stop())
+    c.src.disconnect()
+    this.capIn.disconnect()
+    try {
+      c.el.srcObject = null
+      if (!c.win.closed) c.win.close()
+    } catch {
+      /* window already gone */
+    }
+    this.connectMain()
+    this.moveCue()
+    this.set({ streamFx: 'off', captureRoute: 'none' })
+    this.applyStreamGain()
+  }
+
+  /** the cue output would be captured too, so it follows the main mix into the pop-up */
+  private moveCue() {
+    if (!this.cueEl) return
+    this.cueEl.pause()
+    this.cueEl.srcObject = null
+    this.cueEl = null
+    if (this.s.cueOut) void this.setCueOut(this.s.cueOut)
   }
 
   /* ---------------- panel: power, master ---------------- */
@@ -540,7 +690,7 @@ export class Mixer {
     }
     this.setCh(c, { cue: !this.s.ch[c].cue })
     this.applyCh(c)
-    if (this.s.ch[c].cue && this.s.inputs[c] === 'stream') this.flash('LOCAL ONLY')
+    if (this.s.ch[c].cue && !this.processed(c)) this.flash('LOCAL ONLY')
     if (this.s.ch[c].cue && !this.s.cueOut) this.flash('NO CUE OUT', 1300)
   }
 
@@ -877,7 +1027,7 @@ export class Mixer {
       return
     }
     if (!this.cueEl) {
-      this.cueEl = new Audio()
+      this.cueEl = (this.cap?.win.document ?? document).createElement('audio')
       this.cueEl.srcObject = this.cueDest.stream
     }
     const el = this.cueEl as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }
@@ -892,9 +1042,10 @@ export class Mixer {
   /* ---------------- helpers ---------------- */
 
   private localOnly(c: Ch, fxOnly = false) {
-    if (this.s.inputs[c] !== 'stream') return
+    if (this.processed(c)) return
     if (fxOnly && this.s.ch[c].fx === 'siren') return
-    if (!this.s.message) this.flash('LOCAL ONLY', 900)
+    // captured, only a lone stream gets a strip; two streams share the main mix
+    if (!this.s.message) this.flash(this.cap ? 'ONE STREAM' : 'LOCAL ONLY', 900)
   }
   fmtDb(db: number) {
     return `${db > 0 ? '+' : ''}${db.toFixed(1)}`
@@ -913,6 +1064,7 @@ export class Mixer {
       return d.sourceKind === 'local' ? 'local' : 'stream'
     }) as [Input, Input]
     if (inputs[0] !== this.s.inputs[0] || inputs[1] !== this.s.inputs[1]) patch.inputs = inputs
+    this.routeCapture()
 
     // tempo tracking follows track changes
     this.decks.forEach((d, i) => {
@@ -938,7 +1090,7 @@ export class Mixer {
     // meters: real for local audio; a streaming deck borrows its own (animated) VU
     const ch = this.s.ch.map((c, i) => {
       let lv: [number, number]
-      if (inputs[i] === 'stream') {
+      if (inputs[i] === 'stream' && !(this.cap && this.s.captureRoute === String(i))) {
         const vu = this.decks[i]!.getState().vu
         lv = [vu[0] * c.fader, vu[1] * c.fader]
       } else {
@@ -961,7 +1113,8 @@ export class Mixer {
     const mm: [number, number] = [peak(this.masterMeters[0]), peak(this.masterMeters[1])]
     const streamMeters = ch.filter((_, i) => inputs[i] === 'stream').map(c => c.meter)
     if (this.auxDeck && this.auxDeck.sourceKind !== 'local') streamMeters.push(this.auxDeck.getState().vu)
-    if (this.s.power) {
+    // captured streams are already in the real master meter
+    if (this.s.power && !this.cap) {
       for (const levels of streamMeters) {
         mm[0] = Math.max(mm[0], levels[0] * this.s.master)
         mm[1] = Math.max(mm[1], levels[1] * this.s.master)
