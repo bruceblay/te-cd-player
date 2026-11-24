@@ -7,13 +7,14 @@
 - K.O.-sidekick mixer (`m`): EQ (DJ/studio/param), compressor, pan, cue bus, six effects, tempo, FX sequencer, lock, serial mode, settings. Full processing on local files; streams get fader/gain cut/volume/power/siren.
 - Two independent BC-1 decks flank the Sidekick. Each has its own disc and transport; keyboard shortcuts follow the last deck clicked or focused.
 - Patch cables default to left deck → CH 1 and right deck → CH 2. Either deck can be repatched to a free input, including AUX, and connections persist across reloads.
+- MIDI learn (menu → midi): connect a controller, click any deck or mixer control in 2D or 3D, move a hardware CC, note or pitch bend to bind it. Mappings persist; with none saved, CC 23-26 on channel 1 drive deck 1 play/stop/next/prev as in the BC-1 manual. Tested with simulated messages only, not a physical controller.
 
 ## Visual checks
 - Burn dialog and printed disc reviewed in Chrome at desktop size. Space on the focused Burn button loaded an orange one-track YouTube disc; printed disc lettering was subsequently enlarged and widened for desktop legibility.
 - Force pad "dish" look and the static knob shading: reviewed once at 3x zoom.
 
 ## Left to do
-- Web MIDI has no way to connect since the USB port was removed (code is still in `src/engine/midi.ts`).
+- MIDI clock out (`src/engine/midi.ts`) still has no way to connect since the USB port was removed; MIDI input now goes through MIDI learn.
 - Spotify full-control path (client ID + Premium) is untested; signing in from the burn dialog leaves the page and loses the draft.
 - SoundCloud sets: tracks past the first five only get titles once they've played.
 - Sidekick details TE doesn't document (compressor type names, parametric EQ behaviour, parallel FX routing) are educated guesses.
@@ -21,4 +22,3 @@
 ## Feature notes (planned)
 - **Spotify auth**: Full Spotify OAuth flow (including preserving in-progress burn drafts across auth redirect, or popup-based sign-in).
 - **Full playlist imports**: Import full playlists cleanly from **Spotify**, **YouTube**, and **SoundCloud** directly into a burned disc (all tracks, titles, and durations).
-- **MIDI Assign / Learn mode**: Web MIDI controller mapping mode — click any knob, fader, button, jog, or force pad (in 2D or 3D) and wiggle a hardware MIDI CC / Note control to bind it, with persisted mappings.

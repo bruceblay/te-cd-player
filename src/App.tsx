@@ -34,6 +34,8 @@ import {
 import { HandTracker, type HandStatus } from './ui/HandTracker'
 import type { HandStyle } from './ui/handRender'
 import type { Jack } from './engine/mixer'
+import { buildControls, midiLearn } from './engine/midiLearn'
+import { MidiLearnLayer } from './ui/MidiLearn'
 
 
 const decks = [new Deck(), new Deck()] as const
@@ -386,8 +388,17 @@ export default function App() {
     }
   }, [decks])
 
+  // MIDI learn: keep the mappable controls in step with the layout, and reconnect if it was on last time
+  useEffect(() => {
+    midiLearn.setControls(buildControls(decks, deckCount, () => (mixerOn ? getMixer() : null)))
+  }, [decks, deckCount, mixerOn])
+  useEffect(() => {
+    if (!OG) midiLearn.restore()
+  }, [])
+
   return (
     <main className={`page ${view === '3d' ? 'page-3d' : ''}`}>
+      {!OG && <MidiLearnLayer />}
       {!OG && <SideDrawer
         open={drawerOpen}
         onOpen={() => setDrawerOpen(true)}

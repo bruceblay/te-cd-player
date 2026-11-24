@@ -371,6 +371,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     kind: 'toggle' as const,
     deckIndex,
     onToggle: () => deck.powerSwitch(deck.getState().power === 'off'),
+    midi: `d${deckIndex}.power`,
   }
   tagControl(pwrNub, pwrAction)
   tagControl(pwrHousing, pwrAction)
@@ -647,6 +648,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     getValue: () => number
     setValue: (v: number) => void
     onReset?: () => void
+    midi?: string
   }) => {
     const cx = dx(opts.x + 17)
     const cz = dz(opts.y + 17)
@@ -740,6 +742,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
       getValue: opts.getValue,
       setValue: opts.setValue,
       onReset: opts.onReset,
+      midi: opts.midi,
     })
     group.add(rotor)
     return rotor
@@ -761,6 +764,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     getValue: () => deck.getState().varispeed,
     setValue: (v) => deck.setVarispeed(v),
     onReset: () => deck.setVarispeed(100),
+    midi: `d${deckIndex}.varispeed`,
   })
 
   // Warm off-white satin LEVEL knob (uniform 17u diameter × 1.18 tall)
@@ -778,6 +782,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     max: 100,
     getValue: () => deck.getState().level,
     setValue: (v) => deck.setLevel(v),
+    midi: `d${deckIndex}.level`,
   })
 
   /* ---------------- 7. Orange JOG 3D Spring-Return Rocker Switch ---------------- */
@@ -819,6 +824,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
     kind: 'jog' as const,
     deckIndex,
     setValue: (v: number) => deck.setJog(v),
+    midi: `d${deckIndex}.jog`,
   }
   tagControl(jogPivot, jogAction)
   tagControl(jogSlotHit, jogAction)

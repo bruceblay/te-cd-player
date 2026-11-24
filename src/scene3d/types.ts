@@ -2,7 +2,10 @@ import * as THREE from 'three'
 import type { Deck } from '../engine/deck'
 import type { Mixer } from '../engine/mixer'
 
-export type ControlAction =
+/** what a tagged mesh does; `midi` names it for MIDI learn */
+export type ControlAction = ControlActionBase & { midi?: string }
+
+type ControlActionBase =
   | {
       kind: 'button'
       keyId: string

@@ -8,6 +8,7 @@ import { BC1_D, BC1_W, buildBc1, type Bc1Rig } from './buildBc1'
 import { SK_D, SK_W, buildSidekick, type SidekickRig } from './buildSidekick'
 import { createStudioEnvironment, createStudioFloorTexture } from './materials'
 import type { ControlAction } from './types'
+import { controlIdFor3d, midiLearn } from '../engine/midiLearn'
 
 export type CameraPreset = 'desk' | 'low' | 'top' | 'sidekick'
 
@@ -437,6 +438,14 @@ export function Studio3D({
 
       const { ctrl, hit } = picked
       if (e.button === 2 && ctrl.kind !== 'pad') return
+
+      // MIDI learn: a click picks the control instead of working it
+      if (midiLearn.getState().learning) {
+        e.stopPropagation()
+        e.preventDefault()
+        midiLearn.selectTarget(ctrl.midi ?? (ctrl.kind === 'button' ? controlIdFor3d(ctrl.keyId, ctrl.deckIndex) : null))
+        return
+      }
 
       controls.enabled = false
       capturePointer(renderer.domElement, e.pointerId)

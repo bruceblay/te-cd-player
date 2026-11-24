@@ -4,6 +4,7 @@ import {
   spotifyLogout,
   type SpotifyProfile,
 } from '../sources/spotifyAuth'
+import { MidiSection } from './MidiLearn'
 import { PROP_CATALOG, type PlacedProp, type PropId } from './DeskProps'
 import { HAND_STYLES, type HandStyle } from './handRender'
 import type { HandStatus } from './HandTracker'
@@ -297,6 +298,8 @@ export function SideDrawer({
             )}
           </section>
         )}
+
+        <MidiSection open={open} onLearn={onClose} />
 
         {view === '2d' && (
           <section className="drawer-section drawer-divider">

@@ -362,6 +362,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
   const pwrToggle = {
     kind: 'toggle' as const,
     onToggle: () => mixer.setPower(!mixer.getState().power),
+    midi: 'mx.power',
   }
   tagControl(pwrPuckGroup, pwrToggle)
   tagControl(pwrTrack, pwrToggle)
@@ -463,6 +464,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
     setValue: (v: number) => void
     onTap?: () => void
     onReset?: () => void
+    midi?: string
   }) => {
     const cx = dx(opts.x + 18.5)
     const cz = dz(opts.y + 18.5)
@@ -579,6 +581,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
       setValue: opts.setValue,
       onTap: opts.onTap,
       onReset: opts.onReset,
+      midi: opts.midi,
     })
     group.add(rotor)
     return rotor
@@ -605,6 +608,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
           g.set(g.min + norm * (g.max - g.min))
         },
         onTap: () => mixer.gainTap(c),
+        midi: `mx.gain-${c}`,
       }),
     )
     eqRotors.push({
@@ -618,6 +622,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
         getValue: () => mixer.getState().ch[c].eq.high,
         setValue: (v) => mixer.setEq(c, 'high', v),
         onReset: () => mixer.setEq(c, 'high', 0),
+        midi: `mx.high-${c}`,
       }),
       mid: makeSkKnob({
         x,
@@ -629,6 +634,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
         getValue: () => mixer.getState().ch[c].eq.mid,
         setValue: (v) => mixer.setEq(c, 'mid', v),
         onReset: () => mixer.setEq(c, 'mid', 0),
+        midi: `mx.mid-${c}`,
       }),
       low: makeSkKnob({
         x,
@@ -640,6 +646,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
         getValue: () => mixer.getState().ch[c].eq.low,
         setValue: (v) => mixer.setEq(c, 'low', v),
         onReset: () => mixer.setEq(c, 'low', 0),
+        midi: `mx.low-${c}`,
       }),
     })
   }
@@ -652,6 +659,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
     max: 1,
     getValue: () => mixer.getState().master,
     setValue: (v) => mixer.setMaster(v),
+    midi: 'mx.volume',
   })
 
   const phonesRotor = makeSkKnob({
@@ -662,6 +670,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
     max: 1,
     getValue: () => mixer.getState().phones,
     setValue: (v) => mixer.setPhones(v),
+    midi: 'mx.phones',
   })
 
   /* ---------------- 5. Round Matte-Grey Sidekick Fader Caps (matching .sk-fader-cap) ---------------- */
@@ -745,6 +754,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
       kind: 'fader' as const,
       getValue: () => mixer.getState().ch[c].fader,
       setValue: (v: number) => mixer.setFader(c, v),
+      midi: `mx.fader-${c}`,
     }
     tagControl(capGroup, action)
     tagControl(slotHit, action)
@@ -794,6 +804,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
   const padAction = {
     kind: 'pad' as const,
     setMod: (stick: number, pad: number, lock?: boolean) => mixer.setMod(stick, pad, lock),
+    midi: 'mx.pad',
   }
   tagControl(padMesh, padAction)
   tagControl(padRing, padAction)
@@ -837,6 +848,7 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
   const modAction = {
     kind: 'jog' as const,
     setValue: (v: number) => mixer.setStick(v),
+    midi: 'mx.mod',
   }
   tagControl(modPivot, modAction)
   tagControl(modSlotHit, modAction)
