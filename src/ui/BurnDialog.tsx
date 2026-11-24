@@ -3,7 +3,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities'
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { DISC_COLORS, resolveFiles, resolveLink, type Compilation, type Item } from '../engine/compilation'
-import { listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
+import { BUILT_IN_DISCS, listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
 import type { Deck } from '../engine/deck'
 import { parseSpotify } from '../sources/spotify'
 import {
@@ -125,7 +125,12 @@ export const BurnDialog = forwardRef<
     setBusy(true)
     setProblem(null)
     try {
-      const disc = await openDisc(id)
+      const builtIn = BUILT_IN_DISCS.find((d) => d.id === id)
+      const m = mount()
+      if (builtIn && !m) return
+      const disc = builtIn
+        ? { title: builtIn.title, color: DISC_COLORS[0], items: (await resolveLink(builtIn.url, m!)).items }
+        : await openDisc(id)
       if (token !== session.current) return
       setDraft(disc)
       setUrl('')
@@ -239,24 +244,22 @@ export const BurnDialog = forwardRef<
     <dialog ref={dlg} className="lid burn" onClose={() => { session.current++ }} onClick={(e) => e.target === dlg.current && dlg.current?.close()}>
       <header className="lid-head">
         <h2>make disc</h2>
-        {saved.length > 0 && (
-          <select
-            className="saved-discs"
-            aria-label="open saved disc"
-            value=""
-            disabled={busy || saving}
-            onChange={(e) => void restore(e.target.value)}
-          >
-            <option value="" disabled>
-              saved discs
+        <select
+          className="saved-discs"
+          aria-label="open saved disc"
+          value=""
+          disabled={busy || saving}
+          onChange={(e) => void restore(e.target.value)}
+        >
+          <option value="" disabled>
+            saved discs
+          </option>
+          {[...BUILT_IN_DISCS, ...saved].map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.title}
             </option>
-            {saved.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.title}
-              </option>
-            ))}
-          </select>
-        )}
+          ))}
+        </select>
         <button type="button" className="lid-close" aria-label="close" onClick={() => dlg.current?.close()}>
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" /></svg>
         </button>
