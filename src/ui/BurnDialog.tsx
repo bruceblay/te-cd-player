@@ -3,7 +3,8 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities'
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { DISC_COLORS, resolveFiles, resolveLink, type Compilation, type Item } from '../engine/compilation'
-import { BUILT_IN_DISCS, listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
+import { BUILT_IN_DISCS, openBuiltIn } from '../engine/builtInDiscs'
+import { listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
 import type { Deck } from '../engine/deck'
 import { parseSpotify } from '../sources/spotify'
 import {
@@ -128,9 +129,7 @@ export const BurnDialog = forwardRef<
       const builtIn = BUILT_IN_DISCS.find((d) => d.id === id)
       const m = mount()
       if (builtIn && !m) return
-      const disc = builtIn
-        ? { title: builtIn.title, color: builtIn.color, items: (await resolveLink(builtIn.url, m!)).items }
-        : await openDisc(id)
+      const disc = builtIn ? await openBuiltIn(builtIn, m!) : await openDisc(id)
       if (token !== session.current) return
       setDraft(disc)
       setUrl('')

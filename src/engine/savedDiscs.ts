@@ -62,8 +62,3 @@ export async function openDisc(id: string): Promise<SavedDisc> {
     db.close()
   }
 }
-
-/** discs that ship with the app; their tracks are read from the link when picked */
-export const BUILT_IN_DISCS: (DiscListing & { url: string; color: string })[] = [
-  { id: 'builtin:oil-and-cotton', title: 'oil and cotton', url: 'https://www.youtube.com/playlist?list=PLFBFAAB01A2CF4DB6', color: '#ff5a1f' },
-]
