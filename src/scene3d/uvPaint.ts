@@ -76,23 +76,6 @@ function wave(g: CanvasRenderingContext2D, y0: number, W: number, amp: number, f
   })
 }
 
-function eye(g: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string, iris: string) {
-  glowStroke(g, color, 4, () => {
-    g.moveTo(cx - s, cy)
-    g.quadraticCurveTo(cx, cy - s * 0.75, cx + s, cy)
-    g.quadraticCurveTo(cx, cy + s * 0.75, cx - s, cy)
-  })
-  glowStroke(g, iris, 4, () => g.arc(cx, cy, s * 0.28, 0, Math.PI * 2))
-  g.save()
-  g.fillStyle = iris
-  g.shadowColor = iris
-  g.shadowBlur = 16
-  g.beginPath()
-  g.arc(cx, cy, s * 0.1, 0, Math.PI * 2)
-  g.fill()
-  g.restore()
-}
-
 function mushroom(g: CanvasRenderingContext2D, cx: number, base: number, s: number, cap: string, stem: string) {
   glowStroke(g, stem, 4, () => {
     g.moveTo(cx - s * 0.18, base)
@@ -161,8 +144,6 @@ export function uvPaintTexture(surface: UvSurface, wCm: number, hCm: number, hol
         }
       })
     }
-    eye(g, W * 0.28, H * 0.62, 70, '#39ff14', '#ff2bd6')
-    eye(g, W * 0.72, H * 0.7, 55, '#00e5ff', '#f6ff00')
     dots(g, rnd, W, H, 50)
   } else if (surface === 'right') {
     mushroom(g, W * 0.22, H * 0.92, 150, '#ff2bd6', '#39ff14')
