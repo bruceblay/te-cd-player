@@ -724,7 +724,8 @@ export function buildStudioRoom(): StudioRoomRig {
     shadeInnerMat.emissiveIntensity = level * 1.6
     bulbMat.emissiveIntensity = level * 4
     ;(locator.material as THREE.MeshBasicMaterial).opacity = level
-    rocker.rotation.x = level > 0.5 ? -0.22 : 0.22
+    // like a wall switch: top pressed in means on, bottom pressed in means off
+    rocker.rotation.x = level > 0.5 ? 0.22 : -0.22
   }
   const daylight = windowGlow.intensity
   setNight(0)
