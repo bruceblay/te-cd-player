@@ -2,6 +2,8 @@ The Boredoms gig poster is Seripop's (Yannick Desranleau and Chloe Lum) 2005 scr
 
 https://collections.vam.ac.uk/item/O1274895/poster-desranleau--yannick
 
+The black-and-white photograph on the left wall was supplied by the builder; its photographer and reproduction rights have not been verified.
+
 The view through the studio window is a cropped, color-graded detail from Poly Haven’s Autumn Park panorama.
 
 https://polyhaven.com/a/autumn_park

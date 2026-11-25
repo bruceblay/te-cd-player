@@ -1,6 +1,7 @@
 import { buildBookshelf } from './buildBookshelf'
 import * as THREE from 'three'
 import boredomsPrint from '../assets/room/seripop-boredoms-2005.jpg'
+import gardenPhoto from '../assets/room/garden-photo.jpg'
 import mineralPlaster from '../assets/room/mineral-plaster.webp'
 import acousticOak from '../assets/room/acoustic-oak.webp'
 import forestCollage from '../assets/room/forest-collage.webp'
@@ -470,8 +471,8 @@ export function buildStudioRoom(): StudioRoomRig {
   sill.position.set(winCX, y0 - 1, BACK_Z + 3.0)
   group.add(sill)
 
-  // Framed gig poster and waveform print.
-  const addFramedArt = (variant: 'boredoms' | 'wave', x: number, y: number, w: number, h: number, zOff: number) => {
+  // Framed gig poster, photo print and waveform print.
+  const addFramedArt = (variant: 'boredoms' | 'garden' | 'wave', x: number, y: number, w: number, h: number, zOff: number) => {
     const fg = new THREE.Group()
     fg.position.set(x, y, BACK_Z + zOff)
 
@@ -486,8 +487,8 @@ export function buildStudioRoom(): StudioRoomRig {
       fg.add(side, end)
     }
 
-    const isGigPrint = variant === 'boredoms'
-    const artTex = isGigPrint ? surfaceTexture(boredomsPrint) : t.tex(makeWavePrint())
+    const artTex =
+      variant === 'boredoms' ? surfaceTexture(boredomsPrint) : variant === 'garden' ? surfaceTexture(gardenPhoto) : t.tex(makeWavePrint())
     const paper = t.geo(new THREE.PlaneGeometry(w,h))
     const print = new THREE.Mesh(
       paper,
@@ -496,10 +497,15 @@ export function buildStudioRoom(): StudioRoomRig {
     print.position.z = 0.25
     fg.add(print)
     group.add(fg)
+    return fg
   }
   // the gig poster hangs straight on the wall, behind the middle of the desk
   addFramedArt('boredoms', 8, 26, 30, 45, 1.0)
   addFramedArt('wave', 68, 111, 17, 21.5, 1.0)
+  // the black-and-white garden photo hangs centred on the fourth oak panel of the left wall, near the desk
+  const photo = addFramedArt('garden', 0, 44, 40, 40 * 1400 / 950, 0)
+  photo.rotation.y = Math.PI / 2
+  photo.position.set(-SIDE_X + 0.35 + panelDepth + 0.8, 44, FRONT_Z - 3.5 * bayWidth)
 
   // 6. Handbuilt OSB bookcase and cassette rack on Back-Right Wall
   const bookshelf = buildBookshelf(t, surfaceTexture)
