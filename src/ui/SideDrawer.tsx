@@ -23,7 +23,7 @@ export interface LayoutConfig {
   sidekick: boolean
 }
 
-// teenage engineering's own pages for the two devices modelled here
+// teenage engineering's own pages for the two devices modelled here, and this site's source
 const TE_LINKS: { name: string; links: [label: string, href: string][] }[] = [
   {
     name: 'EP/BC–1 CD player',
@@ -39,6 +39,8 @@ const TE_LINKS: { name: string; links: [label: string, href: string][] }[] = [
       ['store', 'https://teenage.engineering/store/ep-136'],
     ],
   },
+  // this site's own code
+  { name: 'source code', links: [['github', 'https://github.com/bruceblay/te-cd-player']] },
 ]
 
 const DECKS_KEY = 'bc1.decks'
