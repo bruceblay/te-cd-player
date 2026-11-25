@@ -1788,6 +1788,34 @@ button {
   cursor: default;
 }
 
+/* credits: teenage engineering's pages for the two devices */
+.drawer-note.credits-note {
+  margin-top: 0;
+}
+.credit-home {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: rgb(35 35 33 / 0.3);
+  text-underline-offset: 2px;
+}
+.credit-home:hover {
+  text-decoration-color: currentColor;
+}
+.credit-links {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.credit-links li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
 .prop-picker {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

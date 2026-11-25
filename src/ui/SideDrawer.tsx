@@ -7,6 +7,7 @@ import {
 import { MidiSection } from './MidiLearn'
 import { StreamFxSection } from './StreamFx'
 import { IS_PHONE } from './phone'
+import { track } from '../analytics'
 import type { Mixer } from '../engine/mixer'
 import { PROP_CATALOG, type PlacedProp, type PropId } from './DeskProps'
 import { HAND_STYLES, type HandStyle } from './handRender'
@@ -21,6 +22,24 @@ export interface LayoutConfig {
   /** only applies when decks === 1; 2 decks always includes the sidekick */
   sidekick: boolean
 }
+
+// teenage engineering's own pages for the two devices modelled here
+const TE_LINKS: { name: string; links: [label: string, href: string][] }[] = [
+  {
+    name: 'EP/BC–1 CD player',
+    links: [
+      ['details', 'https://teenage.engineering/products/bc-1'],
+      ['store', 'https://teenage.engineering/store/bc-1'],
+    ],
+  },
+  {
+    name: 'EP–136 K.O.–sidekick',
+    links: [
+      ['details', 'https://teenage.engineering/products/ep-136'],
+      ['store', 'https://teenage.engineering/store/ep-136'],
+    ],
+  },
+]
 
 const DECKS_KEY = 'bc1.decks'
 const MIXER_KEY = 'bc1.mixer'
@@ -422,6 +441,46 @@ export function SideDrawer({
           )}
         </section>
         )}
+
+        <section className="drawer-section drawer-divider">
+          <h3 className="drawer-label">credits</h3>
+          <p className="drawer-note credits-note">
+            The EP/BC–1 CD player and the EP–136 K.O.–sidekick are designed and made by{' '}
+            <a
+              className="credit-home"
+              href="https://teenage.engineering"
+              target="_blank"
+              rel="noopener"
+              tabIndex={open ? 0 : -1}
+              onClick={() => track('credit_link', { to: 'teenage engineering' })}
+            >
+              teenage engineering
+            </a>
+            . This is an unofficial model of them, not affiliated with teenage engineering.
+          </p>
+          <ul className="credit-links">
+            {TE_LINKS.map((d) => (
+              <li key={d.name}>
+                <span className="drawer-row-label">{d.name}</span>
+                <span className="drawer-mini-actions">
+                  {d.links.map(([label, href]) => (
+                    <a
+                      key={label}
+                      className="drawer-link"
+                      href={href}
+                      target="_blank"
+                      rel="noopener"
+                      tabIndex={open ? 0 : -1}
+                      onClick={() => track('credit_link', { to: `${d.name} ${label}` })}
+                    >
+                      {label}
+                    </a>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       </aside>
     </>
   )
