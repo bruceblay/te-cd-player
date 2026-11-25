@@ -700,7 +700,8 @@ export function buildStudioRoom(): StudioRoomRig {
   lamp.rotation.y = -Math.atan2(26, 40)
   group.add(lamp)
   // its light: a warm cone onto the desk, plus a little spill around the lamp
-  const lampLight = new THREE.SpotLight(0xffc98c, 0, 220, 0.78, 0.65, 1.2)
+  // A small lamp: at the gear (about 45 cm away) it should land near daylight strength, not far above it
+  const lampLight = new THREE.SpotLight(0xffc98c, 0, 220, 0.9, 0.85, 1.2)
   lamp.updateMatrixWorld(true)
   lampLight.position.copy(bulb.getWorldPosition(new THREE.Vector3()))
   lampLight.target.position.set(-4, 0, 4)
@@ -717,8 +718,8 @@ export function buildStudioRoom(): StudioRoomRig {
     moonMat.opacity = level
     moon.visible = level > 0.01
     // the lamp comes on
-    lampLight.intensity = level * 3000
-    lampSpill.intensity = level * 170
+    lampLight.intensity = level * 150
+    lampSpill.intensity = level * 45
     shadeInnerMat.emissiveIntensity = level * 1.6
     bulbMat.emissiveIntensity = level * 4
     ;(locator.material as THREE.MeshBasicMaterial).opacity = level
