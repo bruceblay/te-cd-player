@@ -201,6 +201,8 @@ export async function createHandMesh(initialStyle: MeshHandStyle = 'goblin') {
   const requested = new Set([first])
   let disposed = false
   return {
+    /** true once the browser has dropped this renderer's WebGL context (the tracker then rebuilds it) */
+    lost: () => renderer.getContext().isContextLost(),
     draw(ctx: CanvasRenderingContext2D, hands: RenderedHand[], style: MeshHandStyle) {
       if (renderer.getContext().isContextLost()) return false
       const w = window.innerWidth, h = window.innerHeight

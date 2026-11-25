@@ -317,7 +317,7 @@ export function SideDrawer({
           {handStatus.state === 'loading' && <p className="drawer-note">starting webcam &amp; MediaPipe…</p>}
           {handStatus.state === 'active' && (
             <p className="drawer-note">
-              tracking {handStatus.hands} {handStatus.hands === 1 ? 'hand' : 'hands'}{handStatus.illustratedFallback ? ' · using 2D fallback' : ''}
+              tracking {handStatus.hands} {handStatus.hands === 1 ? 'hand' : 'hands'}{handStatus.meshUnavailable ? ' · 3D hands didn’t load, reload the page for them' : handStatus.illustratedFallback ? ' · using 2D fallback' : ''}
             </p>
           )}
           {handStatus.state === 'error' && <p className="drawer-note error">{handStatus.error}</p>}

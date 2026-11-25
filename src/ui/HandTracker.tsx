@@ -7,6 +7,8 @@ export interface HandStatus {
   state: 'off' | 'loading' | 'active' | 'error'
   hands: number
   illustratedFallback?: boolean
+  /** the 3D hands couldn't load (usually a tab opened before the site was updated): reload for them */
+  meshUnavailable?: boolean
   error?: string
 }
 
@@ -141,6 +143,9 @@ export function HandTracker({
     let landmarker: import('@mediapipe/tasks-vision').HandLandmarker | null = null
     let mesh: Awaited<ReturnType<typeof import('./handMesh').createHandMesh>> | undefined
     let meshRequested = false
+    let meshFailures = 0
+    let meshRetryAt = 0
+    let lastUnavailable = false
 
     const slots: [HandSlot, HandSlot] = [newSlot(101), newSlot(102)]
     let lastFallback = false
@@ -400,19 +405,36 @@ export function HandTracker({
 
           const ctx = c.getContext('2d')
           const style = styleRef.current
-          if (rendered.length && !meshRequested && style !== 'wireframe') {
+          // the browser can drop the 3D hands' WebGL context: throw it away and build a new one
+          if (mesh?.lost()) {
+            mesh.dispose()
+            mesh = undefined
+            meshRequested = false
+          }
+          if (rendered.length && !meshRequested && style !== 'wireframe' && now >= meshRetryAt) {
             meshRequested = true
             void import('./handMesh').then(m => m.createHandMesh(style)).then(result => {
               if (cancelled) result.dispose()
-              else mesh = result
-            }).catch(() => { /* Canvas hands remain available without WebGL. */ })
+              else {
+                mesh = result
+                meshFailures = 0
+              }
+            }).catch(() => {
+              // Usually this tab predates a site update, so the 3D hands' file has moved on.
+              // Keep the drawn hands, try again in a few seconds, and say a reload brings them back.
+              meshFailures++
+              meshRequested = false
+              meshRetryAt = performance.now() + 4000 * meshFailures
+            })
           }
           if (!ctx) return
           const fallback = renderHands(ctx, rendered, style, mesh?.draw)
-          if (rendered.length !== lastHandCount || fallback !== lastFallback) {
+          const unavailable = meshFailures > 0 && style !== 'wireframe'
+          if (rendered.length !== lastHandCount || fallback !== lastFallback || unavailable !== lastUnavailable) {
             lastHandCount = rendered.length
             lastFallback = fallback
-            statusCb.current({ state: 'active', hands: rendered.length, illustratedFallback: fallback })
+            lastUnavailable = unavailable
+            statusCb.current({ state: 'active', hands: rendered.length, illustratedFallback: fallback, meshUnavailable: unavailable })
           }
         }
         raf = requestAnimationFrame(loop)
