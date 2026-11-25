@@ -502,10 +502,11 @@ export function buildStudioRoom(): StudioRoomRig {
   // the gig poster hangs straight on the wall, behind the middle of the desk
   addFramedArt('boredoms', 8, 26, 30, 45, 1.0)
   addFramedArt('wave', 68, 111, 17, 21.5, 1.0)
-  // the black-and-white garden photo hangs centred on the fourth oak panel of the left wall, near the desk
-  const photo = addFramedArt('garden', 0, 44, 40, 40 * 1400 / 950, 0)
+  // the black-and-white garden photo: a small print just above table height, centred on an oak panel
+  // of the left wall, clear of the corner plant, where the low camera sees it when orbited left
+  const photo = addFramedArt('garden', 0, 12, 24, 24 * 1400 / 950, 0)
   photo.rotation.y = Math.PI / 2
-  photo.position.set(-SIDE_X + 0.35 + panelDepth + 0.8, 44, FRONT_Z - 3.5 * bayWidth)
+  photo.position.set(-SIDE_X + 0.35 + panelDepth + 0.8, 12, FRONT_Z - 3.5 * bayWidth)
 
   // 6. Handbuilt OSB bookcase and cassette rack on Back-Right Wall
   const bookshelf = buildBookshelf(t, surfaceTexture)
