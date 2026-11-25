@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { trackImage } from '../ui/boot'
 
 function createSoftboxTexture(intensity: number, tint = [255, 252, 245]): THREE.CanvasTexture {
   const S = 128
@@ -450,6 +451,7 @@ export function createWoodTablePbrMaps(url: string): {
     normalMap.needsUpdate = true
     roughnessMap.needsUpdate = true
   }
+  trackImage(img, url) // counts towards the loading screen
   img.src = url
 
   return {

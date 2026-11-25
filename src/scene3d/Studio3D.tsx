@@ -10,6 +10,8 @@ import { BC1_D, BC1_W, buildBc1, type Bc1Rig } from './buildBc1'
 import { COASTER_H, PROP_FOOTPRINT_3D, buildProp3D, type PropRig3D } from './buildProps3D'
 import { SK_D, SK_W, buildSidekick, type SidekickRig } from './buildSidekick'
 import { buildStudioRoom } from './buildStudioRoom'
+import { IS_PHONE } from '../ui/phone'
+import { bootFrameDrawn, bootWith3DTextures } from '../ui/boot'
 import type { PlacedProp, PropId } from '../ui/DeskProps'
 import {
   createStudioEnvironment,
@@ -261,8 +263,10 @@ export function Studio3D({
     const initPose = presetPose('desk', propsRef.current.deckCount, propsRef.current.mixerOn, aspectRef.current)
     camera.position.copy(initPose.pos)
 
+    bootWith3DTextures()
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    // phones draw at 1.5x: just over half the pixels of 2x, which a phone screen will not show
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_PHONE ? 1.5 : 2))
     renderer.setSize(width, height)
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -1608,6 +1612,7 @@ export function Studio3D({
 
       controls.update()
       renderer.render(scene, camera)
+      bootFrameDrawn()
     }
 
     raf = requestAnimationFrame(tick)

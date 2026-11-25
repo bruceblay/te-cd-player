@@ -6,6 +6,7 @@ import type { DeckState } from '../engine/deck'
 import { readout } from '../engine/display'
 import { SETTINGS, type MixerState } from '../engine/mixer'
 import { FX_TYPES } from '../engine/sidekickFx'
+import { trackImage } from '../ui/boot'
 import { drawDiscPrint, spinBlur, SPIN_BLUR_DEG } from '../ui/discArt'
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -13,6 +14,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     const img = new Image()
     img.onload = () => resolve(img)
     img.onerror = reject
+    trackImage(img, src) // counts towards the loading screen
     img.src = src
   })
 }

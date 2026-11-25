@@ -6,6 +6,7 @@ import {
 } from '../sources/spotifyAuth'
 import { MidiSection } from './MidiLearn'
 import { StreamFxSection } from './StreamFx'
+import { IS_PHONE } from './phone'
 import type { Mixer } from '../engine/mixer'
 import { PROP_CATALOG, type PlacedProp, type PropId } from './DeskProps'
 import { HAND_STYLES, type HandStyle } from './handRender'
@@ -260,6 +261,8 @@ export function SideDrawer({
           )}
         </section>
 
+        {/* phones skip hand tracking, MIDI, stream FX and desk items: they need a webcam, a controller or a desktop browser, or crowd a small screen */}
+        {!IS_PHONE && (<>
         <section className="drawer-section drawer-divider">
           <h3 className="drawer-label">controls</h3>
 
@@ -298,6 +301,7 @@ export function SideDrawer({
           )}
           {handStatus.state === 'error' && <p className="drawer-note error">{handStatus.error}</p>}
         </section>
+        </>)}
 
         {(spotifyReady || import.meta.env.DEV) && (
           <section className="drawer-section drawer-divider">
@@ -347,8 +351,9 @@ export function SideDrawer({
           </section>
         )}
 
-        <MidiSection open={open} onLearn={onClose} />
-        <StreamFxSection mixer={mixer} open={open} />
+        {!IS_PHONE && <MidiSection open={open} onLearn={onClose} />}
+        {!IS_PHONE && <StreamFxSection mixer={mixer} open={open} />}
+        {!IS_PHONE && (
 
         <section className="drawer-section drawer-divider">
           <div className="drawer-section-head">
@@ -416,6 +421,7 @@ export function SideDrawer({
             </>
           )}
         </section>
+        )}
       </aside>
     </>
   )

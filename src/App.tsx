@@ -42,6 +42,8 @@ import type { HandStyle } from './ui/handRender'
 import type { Jack } from './engine/mixer'
 import { buildControls, midiLearn } from './engine/midiLearn'
 import { MidiLearnLayer } from './ui/MidiLearn'
+import { IS_PHONE } from './ui/phone'
+import { bootDone, bootWithPage } from './ui/boot'
 import { bindSpinningFavicon } from './ui/spinFavicon'
 import { BUILT_IN_DISCS, openBuiltIn } from './engine/builtInDiscs'
 
@@ -144,6 +146,12 @@ export default function App() {
   const drawerOpenRef = useRef(false)
   drawerOpenRef.current = drawerOpen
   const [view, setViewState] = useState<ViewMode>(readViewMode)
+  // The loading screen: the 3D studio finishes it once its textures load; 2D waits for the page's images
+  useEffect(() => {
+    if (OG) bootDone()
+    else if (view === '2d') bootWithPage()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const setView = (next: ViewMode) => {
     setViewState(next)
     saveViewMode(next)
@@ -523,8 +531,8 @@ export default function App() {
           setSpotifyProfile(null)
         }}
       />}
-      {!OG && view === '2d' && propsOn && props && <DeskProps items={props} decks={decks} onChange={updateProps} />}
-      <HandTracker enabled={handsOn && !OG} style={handStyle} onStatus={setHandStatus} />
+      {!OG && !IS_PHONE && view === '2d' && propsOn && props && <DeskProps items={props} decks={decks} onChange={updateProps} />}
+      <HandTracker enabled={handsOn && !OG && !IS_PHONE} style={handStyle} onStatus={setHandStatus} />
       {view === '3d' && !OG ? (
         <Studio3D
           decks={decks}
@@ -533,7 +541,7 @@ export default function App() {
           mixerOn={mixerOn}
           cables={cables}
           surface={surface}
-          propsOn={propsOn}
+          propsOn={propsOn && !IS_PHONE}
           deskProps={props ?? []}
           onUpdateProps={updateProps}
           onSelectDeck={(i) => {
