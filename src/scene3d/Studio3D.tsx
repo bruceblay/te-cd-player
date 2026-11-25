@@ -7,8 +7,9 @@ import type { Deck } from '../engine/deck'
 import type { Mixer } from '../engine/mixer'
 import { capturePointer } from '../ui/controls'
 import { BC1_D, BC1_W, buildBc1, type Bc1Rig } from './buildBc1'
-import { buildProp3D, type PropRig3D } from './buildProps3D'
+import { COASTER_H, PROP_FOOTPRINT_3D, buildProp3D, type PropRig3D } from './buildProps3D'
 import { SK_D, SK_W, buildSidekick, type SidekickRig } from './buildSidekick'
+import { buildStudioRoom } from './buildStudioRoom'
 import type { PlacedProp, PropId } from '../ui/DeskProps'
 import {
   createStudioEnvironment,
@@ -240,16 +241,22 @@ export function Studio3D({
     scene.background = new THREE.Color('#dfdcd4')
     scene.fog = new THREE.Fog('#dfdcd4', 95, 220)
 
-    const camera = new THREE.PerspectiveCamera(32, aspectRef.current, 2.0, 180)
+    const camera = new THREE.PerspectiveCamera(32, aspectRef.current, 2.0, 420)
     // far plane, fog and zoom-out limit follow the fit distance so narrow screens still see the rig
     const applyDepth = () => {
       const base = fitDistance(propsRef.current.deckCount, propsRef.current.mixerOn, aspectRef.current)
-      camera.far = Math.max(180, base + 170)
+      const isWood = propsRef.current.surface === 'wood'
+      camera.far = Math.max(isWood ? 440 : 180, base + 260)
       camera.updateProjectionMatrix()
       const fog = scene.fog as THREE.Fog
-      fog.near = Math.max(95, base + 37)
-      fog.far = Math.max(220, base + 162)
-      controls.maxDistance = Math.max(95, base * 1.4)
+      if (isWood) {
+        fog.near = Math.max(175, base + 95)
+        fog.far = Math.max(410, base + 300)
+      } else {
+        fog.near = Math.max(95, base + 37)
+        fog.far = Math.max(220, base + 162)
+      }
+      controls.maxDistance = Math.max(95, Math.min(isWood ? 118 : 140, base * 1.4))
     }
     const initPose = presetPose('desk', propsRef.current.deckCount, propsRef.current.mixerOn, aspectRef.current)
     camera.position.copy(initPose.pos)
@@ -281,11 +288,11 @@ export function Studio3D({
     keyLight.castShadow = true
     keyLight.shadow.mapSize.set(4096, 4096)
     keyLight.shadow.camera.near = 8
-    keyLight.shadow.camera.far = 112
-    keyLight.shadow.camera.left = -44
-    keyLight.shadow.camera.right = 44
-    keyLight.shadow.camera.top = 30
-    keyLight.shadow.camera.bottom = -30
+    keyLight.shadow.camera.far = 132
+    keyLight.shadow.camera.left = -58
+    keyLight.shadow.camera.right = 58
+    keyLight.shadow.camera.top = 40
+    keyLight.shadow.camera.bottom = -34
     keyLight.shadow.bias = -0.00045
     keyLight.shadow.normalBias = 0.028
     keyLight.shadow.radius = 3.0
@@ -368,18 +375,24 @@ export function Studio3D({
     apron.position.set(0, -TABLE_H - 1.2, 0)
     woodTableGroup.add(apron)
 
-    const legGeo = new THREE.BoxGeometry(2.0, 28, 2.0)
+    const legH = 66.4 // reaches studio floor at y = -70
+    const legGeo = new THREE.BoxGeometry(2.0, legH, 2.0)
     for (const lx of [-(TABLE_W / 2 - 8), TABLE_W / 2 - 8]) {
       for (const lz of [-(TABLE_D / 2 - 8), TABLE_D / 2 - 8]) {
         const leg = new THREE.Mesh(legGeo, steelMat)
-        leg.position.set(lx, -TABLE_H - 14, lz)
+        leg.position.set(lx, -TABLE_H - legH * 0.5, lz)
         woodTableGroup.add(leg)
       }
     }
     scene.add(woodTableGroup)
 
+    // 3. Full Mid-Century Music Studio Room + Desktop Studio Monitor Speakers
+    const studioRoom = buildStudioRoom()
+    scene.add(studioRoom.group)
+
     // Apply active surface theme (studio vs wood) dynamically without tearing down WebGL
     let appliedSurface: 'studio' | 'wood' | null = null
+    let controlsReady = false
     const applySurface = (mode: 'studio' | 'wood') => {
       if (mode === appliedSurface) return
       appliedSurface = mode
@@ -387,22 +400,25 @@ export function Studio3D({
       studioFloor.visible = !isWood
       surround.visible = !isWood
       woodTableGroup.visible = isWood
+      studioRoom.group.visible = isWood
       scene.environment = isWood ? woodEnv.texture : studioEnv.texture
       scene.environmentIntensity = isWood ? 0.92 : 0.88
-      const bgHex = isWood ? 0x1e1a16 : 0xdfdcd4
+      const bgHex = isWood ? 0x26211c : 0xdfdcd4
       scene.background = new THREE.Color(bgHex)
-      scene.fog = new THREE.Fog(bgHex, isWood ? 88 : 95, isWood ? 195 : 220)
+      scene.fog = new THREE.Fog(bgHex, isWood ? 175 : 95, isWood ? 410 : 220)
       hemi.color.setHex(isWood ? 0xfff8ee : 0xfdfbf7)
       hemi.groundColor.setHex(isWood ? 0x735d49 : 0xbdb7ab)
-      hemi.intensity = isWood ? 0.42 : 0.36
+      hemi.intensity = isWood ? 0.52 : 0.36
       keyLight.color.setHex(isWood ? 0xfff4e2 : 0xfffaf0)
       keyLight.intensity = isWood ? 1.65 : 1.55
       fillLight.intensity = isWood ? 0.46 : 0.42
+      if (controlsReady) applyDepth()
     }
     applySurface(propsRef.current.surface)
 
     // OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement)
+    controlsReady = true
     controls.target.copy(initPose.target)
     controls.enableDamping = true
     controls.dampingFactor = 0.08
@@ -532,26 +548,246 @@ export function Studio3D({
     }
     const propRigs = new Map<PropId, PropLive3D>()
 
-    const surfaceYAt = (x: number, z: number): number => {
-      const { decks: curDecks, deckCount: dc, mixerOn: mOn } = propsRef.current
-      for (let i = 0; i < dc; i++) {
-        const deckX = bc1Rigs[i].group.position.x
-        const s = curDecks[i].getState()
-        if (s.disc) {
-          const cx = deckX + DISC_CX_LOCAL
-          const cz = DISC_CZ_LOCAL
-          if (Math.hypot(x - cx, z - cz) <= DISC_R_WORLD * 0.96) return DISC_TOP_Y
+    interface GearHeightMap {
+      minX: number
+      minZ: number
+      step: number
+      cols: number
+      rows: number
+      data: Float32Array
+    }
+
+    const bakeGearHeightMap = (
+      group: THREE.Group,
+      halfW: number,
+      halfD: number,
+      skipPred?: (obj: THREE.Object3D) => boolean,
+    ): GearHeightMap => {
+      const step = 0.25 // 2.5 mm precision — catches every button, key, knob, and CD spindle
+      const minX = -halfW - 0.1
+      const minZ = -halfD - 0.1
+      const cols = Math.ceil((halfW * 2 + 0.2) / step) + 1
+      const rows = Math.ceil((halfD * 2 + 0.2) / step) + 1
+      const data = new Float32Array(cols * rows)
+
+      group.updateMatrixWorld(true)
+      const ox = group.position.x
+      const oz = group.position.z
+
+      const solidMeshes: { mesh: THREE.Mesh; minX: number; maxX: number; minZ: number; maxZ: number }[] = []
+      const box = new THREE.Box3()
+      group.traverse((obj) => {
+        if (!(obj instanceof THREE.Mesh)) return
+        if (skipPred?.(obj)) return
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+        if (!mats.some((m) => !m.transparent || m.opacity >= 0.85)) return
+        box.setFromObject(obj)
+        if (box.max.y < 0.05) return // skip grounded contact shadow plane
+        solidMeshes.push({
+          mesh: obj,
+          minX: box.min.x - 0.02,
+          maxX: box.max.x + 0.02,
+          minZ: box.min.z - 0.02,
+          maxZ: box.max.z + 0.02,
+        })
+      })
+
+      const downRay = new THREE.Raycaster()
+      const downDir = new THREE.Vector3(0, -1, 0)
+      const origin = new THREE.Vector3()
+      const candidates: THREE.Object3D[] = []
+
+      for (let r = 0; r < rows; r++) {
+        const wz = oz + minZ + r * step
+        for (let c = 0; c < cols; c++) {
+          const wx = ox + minX + c * step
+          candidates.length = 0
+          for (let k = 0; k < solidMeshes.length; k++) {
+            const m = solidMeshes[k]
+            if (wx >= m.minX && wx <= m.maxX && wz >= m.minZ && wz <= m.maxZ) {
+              candidates.push(m.mesh)
+            }
+          }
+          if (!candidates.length) continue
+          origin.set(wx, 10, wz)
+          downRay.set(origin, downDir)
+          const hits = downRay.intersectObjects(candidates, false)
+          if (hits.length) {
+            data[r * cols + c] = hits[0].point.y
+          }
         }
-        if (Math.abs(x - deckX) <= BC1_W * 0.5 && Math.abs(z) <= BC1_D * 0.5) return 1.715
+      }
+
+      return { minX, minZ, step, cols, rows, data }
+    }
+
+    const sampleHeightMap = (hm: GearHeightMap, lx: number, lz: number): number => {
+      const c = Math.round((lx - hm.minX) / hm.step)
+      const r = Math.round((lz - hm.minZ) / hm.step)
+      if (c < 0 || c >= hm.cols || r < 0 || r >= hm.rows) return 0
+      return hm.data[r * hm.cols + c]
+    }
+
+    const skipDynamicGearMeshes = (obj: THREE.Object3D) => {
+      const kind = obj.userData?.control?.kind as string | undefined
+      if (kind === 'fader') return true
+      // Skip only the removable CD disc mesh group (keep the platter & center spindle post!)
+      let cur: THREE.Object3D | null = obj
+      while (cur) {
+        if (cur.name === 'bc1-disc-group') return true
+        cur = cur.parent
+      }
+      return false
+    }
+
+    let bc1HeightMap: GearHeightMap | null = null
+    let skHeightMap: GearHeightMap | null = null
+    const getBc1HeightMap = () => {
+      if (!bc1HeightMap) bc1HeightMap = bakeGearHeightMap(bc1Rigs[0].group, BC1_W * 0.5, BC1_D * 0.5, skipDynamicGearMeshes)
+      return bc1HeightMap
+    }
+    const getSkHeightMap = () => {
+      if (!skHeightMap && sidekickRig) {
+        skHeightMap = bakeGearHeightMap(sidekickRig.group, SK_W * 0.5, SK_D * 0.5, skipDynamicGearMeshes)
+      }
+      return skHeightMap
+    }
+
+    // Sidekick live fader geometry constants (matching buildSidekick.ts)
+    const SK_UNIT = BC1_D / 552
+    const SK_FADER_XS = [(19 + 18.5 - 101) * SK_UNIT, (74 + 18.5 - 101) * SK_UNIT]
+    const SK_FADER_TOP_Z = (402 - 276) * SK_UNIT
+    const SK_FADER_BOT_Z = (478 - 276) * SK_UNIT
+    const SK_FADER_R = 8.4 * SK_UNIT + 0.1
+    const SK_FADER_TOP_Y = 2.89
+
+    const centerOverGear = (x: number, z: number): boolean => {
+      const { deckCount: dc, mixerOn: mOn } = propsRef.current
+      for (let i = 0; i < dc; i++) {
+        if (Math.abs(x - bc1Rigs[i].group.position.x) <= BC1_W * 0.5 && Math.abs(z) <= BC1_D * 0.5) return true
       }
       if (mOn && sidekickRig && sidekickRig.group.visible) {
         const sx = sidekickRig.group.position.x
         const sz = sidekickRig.group.position.z
-        if (Math.abs(x - sx) <= SK_W * 0.5 && Math.abs(z - sz) <= SK_D * 0.5) {
-          return z - sz < -4.2 ? 1.96 : 1.72
+        if (Math.abs(x - sx) <= SK_W * 0.5 && Math.abs(z - sz) <= SK_D * 0.5) return true
+      }
+      return false
+    }
+
+    const gearHeightAtPoint = (wx: number, wz: number): number => {
+      const { decks: curDecks, mixer: curMixer, deckCount: dc, mixerOn: mOn } = propsRef.current
+      let h = 0
+      const bMap = getBc1HeightMap()
+      for (let i = 0; i < dc; i++) {
+        const lx = wx - bc1Rigs[i].group.position.x
+        const lz = wz
+        if (Math.abs(lx) <= BC1_W * 0.5 + 0.12 && Math.abs(lz) <= BC1_D * 0.5 + 0.12) {
+          const bh = sampleHeightMap(bMap, lx, lz)
+          if (bh > h) h = bh
+          const dr = Math.hypot(lx - DISC_CX_LOCAL, lz - DISC_CZ_LOCAL)
+          // Analytical guard for the 15 mm center CD spindle clamp (top at TOP_Y + 0.016 + 0.865 = 2.591)
+          if (dr <= 0.84 && 2.6 > h) h = 2.6
+          const s = curDecks[i].getState()
+          if (s.disc && dr <= DISC_R_WORLD) {
+            if (DISC_TOP_Y > h) h = DISC_TOP_Y
+          }
         }
       }
-      return 0
+      if (mOn && sidekickRig && sidekickRig.group.visible) {
+        const lx = wx - sidekickRig.group.position.x
+        const lz = wz - sidekickRig.group.position.z
+        if (Math.abs(lx) <= SK_W * 0.5 + 0.12 && Math.abs(lz) <= SK_D * 0.5 + 0.12) {
+          const sMap = getSkHeightMap()
+          if (sMap) {
+            const sh = sampleHeightMap(sMap, lx, lz)
+            if (sh > h) h = sh
+          }
+          if (curMixer) {
+            const ms = curMixer.getState()
+            for (let c = 0; c < 2; c++) {
+              const fz = SK_FADER_BOT_Z + (SK_FADER_TOP_Z - SK_FADER_BOT_Z) * ms.ch[c].fader
+              if (Math.hypot(lx - SK_FADER_XS[c], lz - fz) <= SK_FADER_R) {
+                if (SK_FADER_TOP_Y > h) h = SK_FADER_TOP_Y
+              }
+            }
+          }
+        }
+      }
+      return h
+    }
+
+    const isOnCoaster = (id: PropId, x: number, z: number, coaster: PropLive3D): boolean => {
+      if (id === 'coaster') return false
+      const cObb = propObb('coaster', coaster.x, coaster.z, coaster.rot)
+      const dx = x - cObb.cx
+      const dz = z - cObb.cz
+      const lx = dx * cObb.ux + dz * cObb.uz
+      const lz = dx * cObb.vx + dz * cObb.vz
+      const footPad = id === 'tea' ? 2.1 : 0.85
+      return Math.abs(lx) <= 5.4 + footPad && Math.abs(lz) <= 5.4 + footPad
+    }
+
+    const coasterRiders = (coaster: PropLive3D): PropId[] => {
+      const riders: PropId[] = []
+      for (const [pid, live] of propRigs) {
+        if (pid !== 'coaster' && isOnCoaster(pid, live.x, live.z, coaster)) {
+          riders.push(pid)
+        }
+      }
+      return riders
+    }
+
+    const surfaceYForProp = (id: PropId, x: number, z: number, rotDeg: number): number => {
+      const obb = propObb(id, x, z, rotDeg)
+      const ex = Math.abs(obb.ux) * obb.halfW + Math.abs(obb.vx) * obb.halfD
+      const ez = Math.abs(obb.uz) * obb.halfW + Math.abs(obb.vz) * obb.halfD
+
+      // Fast AABB reject when completely over the empty desk tabletop
+      const { deckCount: dc, mixerOn: mOn } = propsRef.current
+      let nearGear = false
+      for (let i = 0; i < dc; i++) {
+        const dx = Math.abs(obb.cx - bc1Rigs[i].group.position.x)
+        if (dx <= BC1_W * 0.5 + ex + 0.15 && Math.abs(obb.cz) <= BC1_D * 0.5 + ez + 0.15) {
+          nearGear = true
+          break
+        }
+      }
+      if (!nearGear && mOn && sidekickRig && sidekickRig.group.visible) {
+        const dx = Math.abs(obb.cx - sidekickRig.group.position.x)
+        const dz = Math.abs(obb.cz - sidekickRig.group.position.z)
+        if (dx <= SK_W * 0.5 + ex + 0.15 && dz <= SK_D * 0.5 + ez + 0.15) nearGear = true
+      }
+      let maxY = 0
+      if (nearGear) {
+        // Sample the prop's full rotated footprint at 2.5 mm resolution so no knob, button,
+        // numpad key, fader, or CD spindle post can ever poke through the prop!
+        const step = 0.25
+        const hw = obb.halfW
+        const hd = obb.halfD
+        const stepsU = Math.max(2, Math.ceil((hw * 2) / step))
+        const stepsV = Math.max(2, Math.ceil((hd * 2) / step))
+        for (let iu = 0; iu <= stepsU; iu++) {
+          const u = -hw + (iu / stepsU) * (hw * 2)
+          const baseX = obb.cx + obb.ux * u
+          const baseZ = obb.cz + obb.uz * u
+          for (let iv = 0; iv <= stepsV; iv++) {
+            const v = -hd + (iv / stepsV) * (hd * 2)
+            const h = gearHeightAtPoint(baseX + obb.vx * v, baseZ + obb.vz * v)
+            if (h > maxY) maxY = h
+          }
+        }
+      }
+
+      // Allow the mug of tea (and other props) to rest cleanly on top of the ceramic coaster!
+      if (id !== 'coaster') {
+        const coaster = propRigs.get('coaster')
+        if (coaster && isOnCoaster(id, x, z, coaster)) {
+          const topY = coaster.curY + COASTER_H
+          if (topY > maxY) maxY = topY
+        }
+      }
+
+      return maxY > 0 ? maxY + 0.015 : 0
     }
 
     const rollDieFace = (id: PropId, avoid: number): number => {
@@ -572,6 +808,204 @@ export function Studio3D({
       Math.max(-32, Math.min(32, z)),
     ]
 
+    interface Obb2D {
+      cx: number
+      cz: number
+      ux: number
+      uz: number
+      vx: number
+      vz: number
+      halfW: number
+      halfD: number
+    }
+
+    const propObb = (id: PropId, x: number, z: number, rotDeg: number): Obb2D => {
+      const fp = PROP_FOOTPRINT_3D[id]
+      const theta = THREE.MathUtils.degToRad(-rotDeg)
+      const cos = Math.cos(theta)
+      const sin = Math.sin(theta)
+      const ux = cos
+      const uz = -sin
+      const vx = sin
+      const vz = cos
+      // Offset mug center slightly toward its protruding solid rectangular tab handle
+      const localCX = id === 'tea' ? 1.12 : 0
+      const pad = 0.14
+      return {
+        cx: x + localCX * ux,
+        cz: z + localCX * uz,
+        ux,
+        uz,
+        vx,
+        vz,
+        halfW: fp.halfW + pad,
+        halfD: fp.halfD + pad,
+      }
+    }
+
+    const obbOverlap = (a: Obb2D, b: Obb2D): { nx: number; nz: number; pen: number } | null => {
+      const dx = b.cx - a.cx
+      const dz = b.cz - a.cz
+      let minPen = Infinity
+      let bestNx = 1
+      let bestNz = 0
+
+      const axes: [number, number][] = [
+        [a.ux, a.uz],
+        [a.vx, a.vz],
+        [b.ux, b.uz],
+        [b.vx, b.vz],
+      ]
+      for (const [ax, az] of axes) {
+        const projA = a.halfW * Math.abs(a.ux * ax + a.uz * az) + a.halfD * Math.abs(a.vx * ax + a.vz * az)
+        const projB = b.halfW * Math.abs(b.ux * ax + b.uz * az) + b.halfD * Math.abs(b.vx * ax + b.vz * az)
+        const d = dx * ax + dz * az
+        const pen = projA + projB - Math.abs(d)
+        if (pen <= 0) return null
+        if (pen < minPen) {
+          minPen = pen
+          const sign = d >= 0 ? 1 : -1
+          bestNx = ax * sign
+          bestNz = az * sign
+        }
+      }
+      return { nx: bestNx, nz: bestNz, pen: minPen }
+    }
+
+    const clampDeskPropOutOfGear = (id: PropId, x: number, z: number, rotDeg: number): [number, number] => {
+      const obb = propObb(id, x, z, rotDeg)
+      const ex = Math.abs(obb.ux) * obb.halfW + Math.abs(obb.vx) * obb.halfD
+      const ez = Math.abs(obb.uz) * obb.halfW + Math.abs(obb.vz) * obb.halfD
+      const ox = obb.cx - x
+      const oz = obb.cz - z
+      let nx = x
+      let nz = z
+
+      const boxes: { cx: number; cz: number; hw: number; hd: number }[] = []
+      const { deckCount: dc, mixerOn: mOn } = propsRef.current
+      for (let i = 0; i < dc; i++) {
+        boxes.push({ cx: bc1Rigs[i].group.position.x, cz: 0, hw: BC1_W * 0.5 + 0.25, hd: BC1_D * 0.5 + 0.25 })
+      }
+      if (mOn && sidekickRig && sidekickRig.group.visible) {
+        boxes.push({
+          cx: sidekickRig.group.position.x,
+          cz: sidekickRig.group.position.z,
+          hw: SK_W * 0.5 + 0.25,
+          hd: SK_D * 0.5 + 0.25,
+        })
+      }
+
+      for (const box of boxes) {
+        const dx = nx + ox - box.cx
+        const dz = nz + oz - box.cz
+        const penX = box.hw + ex - Math.abs(dx)
+        const penZ = box.hd + ez - Math.abs(dz)
+        if (penX > 0 && penZ > 0) {
+          if (penX < penZ) nx += (dx >= 0 ? 1 : -1) * penX
+          else nz += (dz >= 0 ? 1 : -1) * penZ
+        }
+      }
+      return clampTable(nx, nz)
+    }
+
+    const resolvePropCollisions = (draggedId: PropId | null) => {
+      const list = Array.from(propRigs.values())
+      if (list.length < 2) return
+
+      const moveProp = (live: PropLive3D, dx: number, dz: number, keepOffGear: boolean): [number, number] => {
+        const prevX = live.x
+        const prevZ = live.z
+        let [nx, nz] = clampTable(prevX + dx, prevZ + dz)
+        if (keepOffGear && live.curY < 0.8) {
+          ;[nx, nz] = clampDeskPropOutOfGear(live.rig.id, nx, nz, live.rot)
+        }
+        live.x = nx
+        live.z = nz
+        if (Math.abs(nx - prevX) > 1e-4 || Math.abs(nz - prevZ) > 1e-4) live.dirty = true
+        return [nx - prevX, nz - prevZ]
+      }
+
+      for (let pass = 0; pass < 4; pass++) {
+        let anyHit = false
+        for (let i = 0; i < list.length; i++) {
+          for (let j = i + 1; j < list.length; j++) {
+            const a = list[i]
+            const b = list[j]
+            // Coaster is a flat tabletop pad designed to sit underneath the mug (and other props)
+            // and slide independently out from under them without horizontal collision rejection.
+            if (a.rig.id === 'coaster' || b.rig.id === 'coaster') continue
+            // Only collide props whose vertical spans actually overlap
+            const hA = PROP_FOOTPRINT_3D[a.rig.id].height
+            const hB = PROP_FOOTPRINT_3D[b.rig.id].height
+            if (a.curY + hA <= b.curY + 0.05 || b.curY + hB <= a.curY + 0.05) continue
+
+            const obbA = propObb(a.rig.id, a.x, a.z, a.rot)
+            const obbB = propObb(b.rig.id, b.x, b.z, b.rot)
+            const hit = obbOverlap(obbA, obbB)
+            if (!hit || hit.pen <= 1e-4) continue
+            anyHit = true
+
+            const mA = PROP_FOOTPRINT_3D[a.rig.id].mass
+            const mB = PROP_FOOTPRINT_3D[b.rig.id].mass
+            let wA: number
+            let wB: number
+            if (a.rig.id === draggedId) {
+              if (mB > mA * 2.4) {
+                wA = 0.84
+                wB = 0.16
+              } else {
+                wA = 0.08
+                wB = 0.92
+              }
+            } else if (b.rig.id === draggedId) {
+              if (mA > mB * 2.4) {
+                wA = 0.16
+                wB = 0.84
+              } else {
+                wA = 0.92
+                wB = 0.08
+              }
+            } else {
+              const total = mA + mB
+              wA = mB / total
+              wB = mA / total
+            }
+
+            const wantAx = -hit.nx * hit.pen * wA
+            const wantAz = -hit.nz * hit.pen * wA
+            const wantBx = hit.nx * hit.pen * wB
+            const wantBz = hit.nz * hit.pen * wB
+
+            const [gotAx, gotAz] = moveProp(a, wantAx, wantAz, a.rig.id !== draggedId)
+            const [gotBx, gotBz] = moveProp(b, wantBx, wantBz, b.rig.id !== draggedId)
+
+            // If one prop was blocked by the table edge or gear wall, feed the remainder back so they never overlap
+            const remAx = wantAx - gotAx
+            const remAz = wantAz - gotAz
+            const remBx = wantBx - gotBx
+            const remBz = wantBz - gotBz
+            if (Math.hypot(remBx, remBz) > 1e-3) {
+              moveProp(a, -remBx, -remBz, a.rig.id !== draggedId)
+            }
+            if (Math.hypot(remAx, remAz) > 1e-3) {
+              moveProp(b, -remAx, -remAz, b.rig.id !== draggedId)
+            }
+
+            // Subtle tactile twist when a resting prop is nudged off-center
+            if (pass === 0 && hit.pen > 0.03) {
+              const rdx = obbB.cx - obbA.cx
+              const rdz = obbB.cz - obbA.cz
+              const cross = rdx * hit.nz - rdz * hit.nx
+              const twist = Math.max(-1.6, Math.min(1.6, cross * hit.pen * 0.28))
+              if (b.rig.id !== draggedId && wB > 0.25) b.rot += twist
+              if (a.rig.id !== draggedId && wA > 0.25) a.rot -= twist
+            }
+          }
+        }
+        if (!anyHit) break
+      }
+    }
+
     const launchDieRoll3D = (id: PropId, onDrop: boolean) => {
       const live = propRigs.get(id)
       if (!live || !live.rig.isDie) return
@@ -586,7 +1020,7 @@ export function Studio3D({
         const [nx, nz] = clampTable(live.x + dx, live.z + dz)
         live.x = nx
         live.z = nz
-        live.curY = surfaceYAt(nx, nz)
+        live.curY = surfaceYForProp(id, nx, nz, live.rot)
         live.rig.root.position.set(nx, live.curY, nz)
         live.dirty = true
       })
@@ -647,6 +1081,7 @@ export function Studio3D({
           offsetX: number
           offsetZ: number
           moved: boolean
+          riders: PropId[]
         }
 
     let activeDrag: DragState | null = null
@@ -692,6 +1127,7 @@ export function Studio3D({
           offsetX,
           offsetZ,
           moved: false,
+          riders: picked.id === 'coaster' ? coasterRiders(live) : [],
         }
         renderer.domElement.style.cursor = 'grabbing'
         return
@@ -759,7 +1195,9 @@ export function Studio3D({
           const isDie = picked.id === 'die' || picked.id === 'd20'
           renderer.domElement.title = isDie
             ? 'click to roll · drag to move · scroll to rotate'
-            : 'drag to move · scroll to rotate'
+            : picked.id === 'candle'
+              ? 'click to light / blow out · drag to move · scroll to rotate'
+              : 'drag to move · scroll to rotate'
           renderer.domElement.style.cursor = 'grab'
           return
         }
@@ -784,10 +1222,26 @@ export function Studio3D({
         if (!live) return
         const hitPt = intersectDragPlane(e.clientX, e.clientY, activeDrag.planeY)
         if (!hitPt) return
+        const prevX = live.x
+        const prevZ = live.z
         const [nx, nz] = clampTable(hitPt.x + activeDrag.offsetX, hitPt.z + activeDrag.offsetZ)
         live.x = nx
         live.z = nz
-        live.curY = surfaceYAt(nx, nz)
+        live.curY = surfaceYForProp(live.rig.id, nx, nz, live.rot)
+        // Moving the coaster carries anything sitting on top of it (like the mug of tea!)
+        if (activeDrag.riders.length) {
+          const dx = nx - prevX
+          const dz = nz - prevZ
+          for (const rid of activeDrag.riders) {
+            const rider = propRigs.get(rid)
+            if (!rider) continue
+            const [rx, rz] = clampTable(rider.x + dx, rider.z + dz)
+            rider.x = rx
+            rider.z = rz
+            rider.curY = surfaceYForProp(rid, rx, rz, rider.rot)
+            rider.dirty = true
+          }
+        }
         return
       }
 
@@ -821,11 +1275,37 @@ export function Studio3D({
           if (live) {
             if (!activeDrag.moved) {
               if (live.rig.isDie) launchDieRoll3D(activeDrag.id, false)
+              else live.rig.onClick?.()
             } else if (live.rig.isDie) {
               launchDieRoll3D(activeDrag.id, true)
             } else {
               const nudge = Math.round((Math.random() - 0.5) * 12)
+              const prevX = live.x
+              const prevZ = live.z
               live.rot += nudge
+              if (!centerOverGear(live.x, live.z)) {
+                ;[live.x, live.z] = clampDeskPropOutOfGear(live.rig.id, live.x, live.z, live.rot)
+              }
+              const clampDx = live.x - prevX
+              const clampDz = live.z - prevZ
+              if (activeDrag.riders.length) {
+                const rad = THREE.MathUtils.degToRad(nudge)
+                const cos = Math.cos(rad)
+                const sin = Math.sin(rad)
+                for (const rid of activeDrag.riders) {
+                  const rider = propRigs.get(rid)
+                  if (!rider) continue
+                  const rx0 = rider.x + clampDx - live.x
+                  const rz0 = rider.z + clampDz - live.z
+                  const [rx, rz] = clampTable(live.x + rx0 * cos - rz0 * sin, live.z + rx0 * sin + rz0 * cos)
+                  rider.x = rx
+                  rider.z = rz
+                  rider.rot += nudge
+                  rider.rig.settle()
+                  persistProp(rid, { x3d: rider.x, z3d: rider.z, rot: rider.rot })
+                }
+              }
+              resolvePropCollisions(null)
               live.rig.settle()
               persistProp(activeDrag.id, { x3d: live.x, z3d: live.z, rot: live.rot })
             }
@@ -864,8 +1344,28 @@ export function Studio3D({
         const live = propRigs.get(picked.id)
         if (!live) return
         const step = e.shiftKey ? 5 : 15
-        live.rot += e.deltaY > 0 ? step : -step
+        const delta = e.deltaY > 0 ? step : -step
+        live.rot += delta
         live.rig.root.rotation.y = THREE.MathUtils.degToRad(-live.rot)
+        // Rotating the coaster rotates anything sitting on top of it around the coaster's center
+        if (picked.id === 'coaster') {
+          const rad = THREE.MathUtils.degToRad(delta)
+          const cos = Math.cos(rad)
+          const sin = Math.sin(rad)
+          for (const rid of coasterRiders(live)) {
+            const rider = propRigs.get(rid)
+            if (!rider) continue
+            const dx = rider.x - live.x
+            const dz = rider.z - live.z
+            const [rx, rz] = clampTable(live.x + dx * cos - dz * sin, live.z + dx * sin + dz * cos)
+            rider.x = rx
+            rider.z = rz
+            rider.rot += delta
+            rider.rig.root.position.set(rx, rider.curY + rider.liftY, rz)
+            rider.rig.root.rotation.y = THREE.MathUtils.degToRad(-rider.rot)
+            persistProp(rid, { x3d: rx, z3d: rz, rot: rider.rot })
+          }
+        }
         persistProp(picked.id, { rot: live.rot })
         return
       }
@@ -948,7 +1448,7 @@ export function Studio3D({
           const tz = p.z3d ?? 16
           if (!live) {
             const rig = buildProp3D(p.id, p.face ?? 1)
-            const curY = surfaceYAt(tx, tz)
+            const curY = surfaceYForProp(p.id, tx, tz, p.rot)
             rig.root.position.set(tx, curY, tz)
             rig.root.rotation.y = THREE.MathUtils.degToRad(-p.rot)
             propsGroup.add(rig.root)
@@ -986,11 +1486,13 @@ export function Studio3D({
 
       for (const [id, live] of propRigs) {
         const draggingThis = activeDrag?.kind === 'prop' && activeDrag.id === id && activeDrag.moved
+        const ridingCoaster =
+          activeDrag?.kind === 'prop' && activeDrag.moved && activeDrag.riders.includes(id)
         const animActive = live.rig.update(dt)
         if (animActive) anyAnimatingOrSpinning = true
 
         // Ride spinning CD rigidly in 3D (matches discGroup.rotation.y -= spinOmega * dt)
-        if (!draggingThis && spinners.length) {
+        if (!draggingThis && !ridingCoaster && spinners.length) {
           for (const sp of spinners) {
             const dx = live.x - sp.cx
             const dz = live.z - sp.cz
@@ -1007,13 +1509,22 @@ export function Studio3D({
           }
         }
 
-        const targetLift = draggingThis ? 1.55 : 0
+        const lifted = draggingThis || ridingCoaster
+        const targetLift = lifted ? 1.55 : 0
         live.liftY += (targetLift - live.liftY) * liftLerp
         const targetTilt = draggingThis ? 0.08 : 0
         live.rig.body.rotation.x += (targetTilt - live.rig.body.rotation.x) * liftLerp
+      }
 
-        const baseY = surfaceYAt(live.x, live.z)
-        live.curY += (baseY - live.curY) * Math.min(1, dt * 22)
+      // Solid physical prop-to-prop OBB collision resolution (mass-weighted pushing, never interpenetrating!)
+      const activeDragId = activeDrag?.kind === 'prop' && activeDrag.moved ? activeDrag.id : null
+      resolvePropCollisions(activeDragId)
+
+      for (const [, live] of propRigs) {
+        const baseY = surfaceYForProp(live.rig.id, live.x, live.z, live.rot)
+        // Rise immediately onto taller obstructions (spindle/knobs) so nothing clips even for 1 frame; settle smoothly down
+        if (baseY > live.curY) live.curY = baseY
+        else live.curY += (baseY - live.curY) * Math.min(1, dt * 22)
         live.rig.root.position.set(live.x, live.curY + live.liftY, live.z)
         live.rig.root.rotation.y = THREE.MathUtils.degToRad(-live.rot)
 
@@ -1113,6 +1624,7 @@ export function Studio3D({
       bc1Rigs[0].dispose()
       bc1Rigs[1].dispose()
       sidekickRig?.dispose()
+      studioRoom.dispose()
       for (const live of propRigs.values()) live.rig.dispose()
       propRigs.clear()
       cableVisuals.forEach((cv) => cv.tube?.geometry.dispose())

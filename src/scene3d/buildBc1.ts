@@ -910,6 +910,7 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
 
   // Elevated cantilevered open-air CD (~5.6 mm clear above aluminum plate)
   const discGroup = new THREE.Group()
+  discGroup.name = 'bc1-disc-group'
   discGroup.position.y = 0.56
   ttGroup.add(discGroup)
 

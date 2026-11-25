@@ -159,7 +159,7 @@ export function makeRig(template: Group, material: MeshStandardMaterial, horn: M
   } }
 }
 
-export async function createHandMesh(initialStyle: MeshHandStyle = 'man') {
+export async function createHandMesh(initialStyle: MeshHandStyle = 'goblin') {
   const loader = new GLTFLoader()
   const family = (style: MeshHandStyle) => style === 'simpson' ? 'simpson' : 'standard'
   type Family = ReturnType<typeof family>

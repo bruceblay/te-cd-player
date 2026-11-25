@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
+import baggieImg from '../assets/props/baggie.png'
+import candleImg from '../assets/props/candle.png'
 import capoImg from '../assets/props/capo.png'
+import coasterImg from '../assets/props/coaster.png'
 import d20Img from '../assets/props/d20.png'
 import dieImg from '../assets/props/die.png'
 import keycapImg from '../assets/props/keycap.png'
 import pencilImg from '../assets/props/pencil.png'
 import succulentImg from '../assets/props/succulent.png'
+import teaImg from '../assets/props/tea.png'
 import type { Deck } from '../engine/deck'
 import { Dice3D, type Dice3DHandle } from './Dice3D'
 
@@ -13,8 +17,12 @@ const BC1_WIDTH_MM = (370 / 246) * 120 // ~180.5 mm
 
 export const PROP_CATALOG = [
   { id: 'succulent', label: 'succulent', image: succulentImg, mm: 60, aspect: 1, kind: 'static' as const },
+  { id: 'candle', label: 'candle', image: candleImg, mm: 54, aspect: 1, kind: 'static' as const },
+  { id: 'tea', label: 'mug of tea', image: teaImg, mm: 112, aspect: 0.78, kind: 'static' as const },
+  { id: 'coaster', label: 'coaster', image: coasterImg, mm: 108, aspect: 1, kind: 'static' as const },
+  { id: 'baggie', label: 'fun baggie', image: baggieImg, mm: 40, aspect: 1.2, kind: 'static' as const },
   { id: 'die', label: 'red die', image: dieImg, mm: 16, aspect: 1, kind: 'd6' as const },
-  { id: 'd20', label: 'd20', image: d20Img, mm: 21, aspect: 1, kind: 'd20' as const },
+  { id: 'd20', label: 'd20', image: d20Img, mm: 27, aspect: 1, kind: 'd20' as const },
   { id: 'pencil', label: 'pencil', image: pencilImg, mm: 165, aspect: 0.075, kind: 'static' as const },
   { id: 'keycap', label: 'esc keycap', image: keycapImg, mm: 18, aspect: 1, kind: 'static' as const },
   { id: 'capo', label: 'guitar capo', image: capoImg, mm: 84, aspect: 0.85, kind: 'static' as const },
@@ -39,7 +47,8 @@ export interface PlacedProp {
 const PROP_MAP = new Map<PropId, (typeof PROP_CATALOG)[number]>(PROP_CATALOG.map((p) => [p.id, p]))
 const PROPS_KEY = 'bc1.props'
 const PROPS_ON_KEY = 'bc1.propsOn'
-const DEFAULT_IDS: PropId[] = ['succulent', 'die', 'pencil', 'keycap']
+const COASTER_SEEDED_KEY = 'bc1.coasterSeeded'
+const DEFAULT_IDS: PropId[] = ['succulent', 'coaster', 'tea', 'die', 'pencil', 'keycap']
 
 const isDie = (id: PropId) => id === 'die' || id === 'd20'
 
@@ -106,9 +115,31 @@ export function readSavedProps(): PlacedProp[] | null {
         ...(validFace !== undefined ? { face: validFace } : {}),
       })
     }
+    // One-time Easter egg seed: if a saved session already has the mug of tea without a coaster,
+    // slip the coaster right underneath the mug once (user can move or remove it freely after).
+    if (out.some((p) => p.id === 'tea') && !out.some((p) => p.id === 'coaster')) {
+      if (localStorage.getItem(COASTER_SEEDED_KEY) !== '1') {
+        localStorage.setItem(COASTER_SEEDED_KEY, '1')
+        const teaIdx = out.findIndex((p) => p.id === 'tea')
+        const tea = out[teaIdx]
+        out.splice(teaIdx, 0, makeCoasterUnderTea(tea))
+      }
+    }
     return out
   } catch {
     return null
+  }
+}
+
+export function makeCoasterUnderTea(tea: PlacedProp): PlacedProp {
+  const rot = Math.round((Math.random() - 0.5) * 14) // gently upright so artwork reads right-side-up when mug is moved
+  return {
+    id: 'coaster',
+    x: tea.x,
+    y: tea.y,
+    rot,
+    ...(tea.x3d !== undefined ? { x3d: tea.x3d } : {}),
+    ...(tea.z3d !== undefined ? { z3d: tea.z3d } : {}),
   }
 }
 
@@ -316,8 +347,31 @@ export function clearGearOverlap(props: PlacedProp[]): PlacedProp[] {
 
 export function createInitialProps(deckCount: 1 | 2 = 2, mixerOn = true): PlacedProp[] {
   const placed: PlacedProp[] = []
-  for (const id of DEFAULT_IDS) placed.push(randomSafeSpot(id, placed))
-  return ensureProps3D(placed, deckCount, mixerOn)
+  for (const id of DEFAULT_IDS) {
+    if (id === 'tea') {
+      const coaster = placed.find((p) => p.id === 'coaster')
+      if (coaster) {
+        placed.push({
+          id: 'tea',
+          x: coaster.x,
+          y: coaster.y,
+          rot: Math.round((Math.random() - 0.5) * 28),
+          ...(coaster.x3d !== undefined ? { x3d: coaster.x3d } : {}),
+          ...(coaster.z3d !== undefined ? { z3d: coaster.z3d } : {}),
+        })
+        continue
+      }
+    }
+    placed.push(randomSafeSpot(id, placed))
+  }
+  const with3d = ensureProps3D(placed, deckCount, mixerOn)
+  const coaster3d = with3d.find((p) => p.id === 'coaster')
+  if (coaster3d && coaster3d.x3d !== undefined && coaster3d.z3d !== undefined) {
+    return with3d.map((p) =>
+      p.id === 'tea' ? { ...p, x: coaster3d.x, y: coaster3d.y, x3d: coaster3d.x3d, z3d: coaster3d.z3d } : p,
+    )
+  }
+  return with3d
 }
 
 export function spawnProp(id: PropId, existing: PlacedProp[], deckCount: 1 | 2 = 2, mixerOn = true): PlacedProp {
@@ -327,8 +381,26 @@ export function spawnProp(id: PropId, existing: PlacedProp[], deckCount: 1 | 2 =
 }
 
 export function scatterProps(props: PlacedProp[], deckCount: 1 | 2 = 2, mixerOn = true): PlacedProp[] {
+  const hasCoaster = props.some((p) => p.id === 'coaster')
+  const ordered = hasCoaster
+    ? [...props.filter((p) => p.id !== 'tea'), ...props.filter((p) => p.id === 'tea')]
+    : props
   const placed: PlacedProp[] = []
-  for (const p of props) {
+  for (const p of ordered) {
+    if (p.id === 'tea' && hasCoaster) {
+      const coaster = placed.find((o) => o.id === 'coaster')
+      if (coaster) {
+        placed.push({
+          id: 'tea',
+          x: coaster.x,
+          y: coaster.y,
+          rot: Math.round((Math.random() - 0.5) * 28),
+          x3d: coaster.x3d,
+          z3d: coaster.z3d,
+        })
+        continue
+      }
+    }
     const p2d = randomSafeSpot(p.id, placed)
     const spot3d = randomSafeSpot3D(p.id, placed, deckCount, mixerOn)
     placed.push({ ...p2d, x3d: spot3d.x3d, z3d: spot3d.z3d, rot: spot3d.rot })
@@ -340,8 +412,12 @@ export function scatterProps(props: PlacedProp[], deckCount: 1 | 2 = 2, mixerOn 
 
 const PROP_EXTENTS_3D: Record<PropId, { halfW: number; halfD: number; rad: number }> = {
   succulent: { halfW: 3.1, halfD: 3.1, rad: 3.2 },
+  candle: { halfW: 2.8, halfD: 2.8, rad: 2.9 },
+  tea: { halfW: 5.5, halfD: 4.7, rad: 5.0 },
+  coaster: { halfW: 5.4, halfD: 5.4, rad: 5.7 },
+  baggie: { halfW: 2.05, halfD: 2.45, rad: 2.4 },
   die: { halfW: 0.9, halfD: 0.9, rad: 1.0 },
-  d20: { halfW: 1.15, halfD: 1.15, rad: 1.25 },
+  d20: { halfW: 1.55, halfD: 1.55, rad: 1.65 },
   pencil: { halfW: 8.3, halfD: 0.55, rad: 4.2 },
   keycap: { halfW: 1.0, halfD: 1.0, rad: 1.1 },
   capo: { halfW: 4.3, halfD: 3.4, rad: 3.9 },
@@ -425,11 +501,14 @@ export function randomSafeSpot3D(
     }
     const x = b.x0 + Math.random() * (b.x1 - b.x0)
     const z = b.z0 + Math.random() * (b.z1 - b.z0)
-    const rot = b.vertical
-      ? (Math.random() > 0.5 ? 90 : -90) + Math.round((Math.random() - 0.5) * 18)
-      : isLong
-        ? Math.round((Math.random() - 0.5) * 26)
-        : Math.round((Math.random() - 0.5) * 110)
+    const rot =
+      id === 'coaster'
+        ? Math.round((Math.random() - 0.5) * 16)
+        : b.vertical
+          ? (Math.random() > 0.5 ? 90 : -90) + Math.round((Math.random() - 0.5) * 18)
+          : isLong
+            ? Math.round((Math.random() - 0.5) * 26)
+            : Math.round((Math.random() - 0.5) * 110)
 
     const inRig = hitsRig(x, z, rot)
     const inOther = hitsOther(x, z)
@@ -503,6 +582,7 @@ export function DeskProps({
     curX: number
     curY: number
     moved: boolean
+    riders: { id: PropId; origX: number; origY: number }[]
   } | null>(null)
   const rotateRef = useRef<{
     id: PropId
@@ -733,6 +813,8 @@ export function DeskProps({
         if (!d.moved) return
         const nx = Math.max(2, Math.min(98, d.origX + (dx / window.innerWidth) * 100))
         const ny = Math.max(3, Math.min(97, d.origY + (dy / window.innerHeight) * 100))
+        const shiftX = nx - d.origX
+        const shiftY = ny - d.origY
         d.curX = nx
         d.curY = ny
         const wrap = wrapRefs.current[d.id]
@@ -744,6 +826,20 @@ export function DeskProps({
         if (live) {
           live.x = nx
           live.y = ny
+        }
+        for (const r of d.riders) {
+          const rx = Math.max(2, Math.min(98, r.origX + shiftX))
+          const ry = Math.max(3, Math.min(97, r.origY + shiftY))
+          const rWrap = wrapRefs.current[r.id]
+          if (rWrap) {
+            rWrap.style.left = `${rx}%`
+            rWrap.style.top = `${ry}%`
+          }
+          const rLive = liveRef.current.find((p) => p.id === r.id)
+          if (rLive) {
+            rLive.x = rx
+            rLive.y = ry
+          }
         }
         return
       }
@@ -781,7 +877,23 @@ export function DeskProps({
         if (isDie(d.id)) rollDie(committed, false)
         return
       }
-      onChangeRef.current((cur) => cur.map((p) => (p.id === d.id ? { ...p, x: d.curX, y: d.curY } : p)))
+      const shiftX = d.curX - d.origX
+      const shiftY = d.curY - d.origY
+      const riderMap = new Map(d.riders.map((r) => [r.id, r]))
+      onChangeRef.current((cur) =>
+        cur.map((p) => {
+          if (p.id === d.id) return { ...p, x: d.curX, y: d.curY }
+          const r = riderMap.get(p.id)
+          if (r) {
+            return {
+              ...p,
+              x: Math.max(2, Math.min(98, r.origX + shiftX)),
+              y: Math.max(3, Math.min(97, r.origY + shiftY)),
+            }
+          }
+          return p
+        }),
+      )
       settleItem(committed)
     }
 
@@ -838,7 +950,25 @@ export function DeskProps({
               if ((e.target as Element).closest('.desk-prop-btn')) return
               e.preventDefault()
               e.stopPropagation()
-              bringToFront(prop.id)
+              // If dragging the coaster, carry any prop resting on top of it (and keep riders visually above the coaster!)
+              let riders: { id: PropId; origX: number; origY: number }[] = []
+              if (prop.id === 'coaster') {
+                const cWrap = wrapRefs.current.coaster
+                const cRect = cWrap?.getBoundingClientRect()
+                if (cRect) {
+                  const vw = Math.max(1, window.innerWidth)
+                  const vh = Math.max(1, window.innerHeight)
+                  for (const other of liveRef.current) {
+                    if (other.id === 'coaster') continue
+                    const ox = (other.x / 100) * vw
+                    const oy = (other.y / 100) * vh
+                    if (ox >= cRect.left && ox <= cRect.right && oy >= cRect.top && oy <= cRect.bottom) {
+                      riders.push({ id: other.id, origX: other.x, origY: other.y })
+                    }
+                  }
+                }
+              }
+              if (!riders.length) bringToFront(prop.id)
               setActiveId(prop.id)
               setMode('drag')
               drag.current = {
@@ -850,6 +980,7 @@ export function DeskProps({
                 curX: prop.x,
                 curY: prop.y,
                 moved: false,
+                riders,
               }
             }}
             onWheel={(e) => {

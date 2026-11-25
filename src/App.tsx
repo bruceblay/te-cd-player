@@ -27,6 +27,7 @@ import {
   clearGearOverlap,
   createInitialProps,
   ensureProps3D,
+  makeCoasterUnderTea,
   readPropsEnabled,
   readSavedProps,
   saveProps,
@@ -41,6 +42,7 @@ import type { HandStyle } from './ui/handRender'
 import type { Jack } from './engine/mixer'
 import { buildControls, midiLearn } from './engine/midiLearn'
 import { MidiLearnLayer } from './ui/MidiLearn'
+import { bindSpinningFavicon } from './ui/spinFavicon'
 import { BUILT_IN_DISCS, openBuiltIn } from './engine/builtInDiscs'
 
 
@@ -152,11 +154,12 @@ export default function App() {
     saveSurface(next)
   }
   const [handsOn, setHandsOn] = useState(false)
-  const [handStyle, setHandStyle] = useState<HandStyle>(readHandStyle)
+  const [handStyle, setHandStyleState] = useState<HandStyle>(readHandStyle)
+  const setHandStyle = (next: HandStyle) => {
+    setHandStyleState(next)
+    saveHandStyle(next)
+  }
   const [handStatus, setHandStatus] = useState<HandStatus>({ state: 'off', hands: 0 })
-  useEffect(() => {
-    saveHandStyle(handStyle)
-  }, [handStyle])
   const [propsOn, setPropsOnState] = useState(readPropsEnabled)
   const setPropsOn = (next: boolean) => {
     setPropsOnState(next)
@@ -195,9 +198,45 @@ export default function App() {
     setProps((cur) => updater(cur ?? []))
   }
   const toggleProp = (id: PropId) => {
-    updateProps((cur) =>
-      cur.some((p) => p.id === id) ? cur.filter((p) => p.id !== id) : [...cur, spawnProp(id, cur, deckCount, mixerOn)],
-    )
+    updateProps((cur) => {
+      if (cur.some((p) => p.id === id)) return cur.filter((p) => p.id !== id)
+      if (id === 'tea') {
+        const existingCoaster = cur.find((p) => p.id === 'coaster')
+        if (existingCoaster) {
+          return [
+            ...cur,
+            {
+              id: 'tea',
+              x: existingCoaster.x,
+              y: existingCoaster.y,
+              rot: Math.round((Math.random() - 0.5) * 28),
+              ...(existingCoaster.x3d !== undefined ? { x3d: existingCoaster.x3d } : {}),
+              ...(existingCoaster.z3d !== undefined ? { z3d: existingCoaster.z3d } : {}),
+            },
+          ]
+        }
+        // Spawn coaster underneath the mug by default (both independently movable!)
+        const coaster = spawnProp('coaster', cur, deckCount, mixerOn)
+        const tea: PlacedProp = {
+          id: 'tea',
+          x: coaster.x,
+          y: coaster.y,
+          rot: Math.round((Math.random() - 0.5) * 28),
+          x3d: coaster.x3d,
+          z3d: coaster.z3d,
+        }
+        return [...cur, coaster, tea]
+      }
+      if (id === 'coaster') {
+        const teaIdx = cur.findIndex((p) => p.id === 'tea')
+        if (teaIdx >= 0) {
+          const next = cur.slice()
+          next.splice(teaIdx, 0, makeCoasterUnderTea(cur[teaIdx]))
+          return next
+        }
+      }
+      return [...cur, spawnProp(id, cur, deckCount, mixerOn)]
+    })
   }
   // Ensure existing saved 2D props receive clean collision-free 3D tabletop coordinates
   useEffect(() => {
@@ -433,6 +472,9 @@ export default function App() {
   useEffect(() => {
     midiLearn.setControls(buildControls(decks, deckCount, () => (mixerOn ? getMixer() : null)))
   }, [decks, deckCount, mixerOn])
+  useEffect(() => {
+    if (!OG) return bindSpinningFavicon(decks)
+  }, [])
   useEffect(() => {
     if (!OG) midiLearn.restore()
   }, [])

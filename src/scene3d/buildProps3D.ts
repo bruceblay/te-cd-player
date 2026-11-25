@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import coasterTopUrl from '../assets/props/coaster-top.jpg'
 import type { PropId } from '../ui/DeskProps'
+
+/** World-unit thickness of the rustic ceramic tile coaster (8.4 mm). */
+export const COASTER_H = 0.84
 
 export interface PropRig3D {
   id: PropId
@@ -18,20 +22,29 @@ export interface PropRig3D {
   roll: (targetFace: number, onDrop: boolean, onSkid?: (dx: number, dz: number) => void) => void
   /** Trigger a subtle physical settle micro-hop for non-dice items */
   settle: () => void
+  /** Optional click action (e.g., blow out / relight candle) */
+  onClick?: () => void
   /** Advance animations (returns true while animating) */
   update: (dt: number) => boolean
   /** Dispose GPU geometries, materials, and textures */
   dispose: () => void
 }
 
-/** World-unit footprint (1 unit = 10 mm) used for collision-free placement & surface checks. */
-export const PROP_FOOTPRINT_3D: Record<PropId, { halfW: number; halfD: number; radius: number }> = {
-  succulent: { halfW: 3.1, halfD: 3.1, radius: 3.1 },
-  die: { halfW: 0.9, halfD: 0.9, radius: 0.95 },
-  d20: { halfW: 1.15, halfD: 1.15, radius: 1.2 },
-  pencil: { halfW: 8.3, halfD: 0.55, radius: 4.5 },
-  keycap: { halfW: 1.0, halfD: 1.0, radius: 1.05 },
-  capo: { halfW: 4.3, halfD: 3.4, radius: 3.9 },
+/** World-unit footprint (1 unit = 10 mm) used for collision-free placement, solid pushing & surface checks. */
+export const PROP_FOOTPRINT_3D: Record<
+  PropId,
+  { halfW: number; halfD: number; radius: number; height: number; mass: number }
+> = {
+  succulent: { halfW: 3.1, halfD: 3.1, radius: 3.1, height: 6.8, mass: 6.0 },
+  die: { halfW: 0.9, halfD: 0.9, radius: 0.95, height: 1.8, mass: 1.0 },
+  d20: { halfW: 1.55, halfD: 1.55, radius: 1.6, height: 2.55, mass: 1.8 },
+  pencil: { halfW: 8.3, halfD: 0.55, radius: 4.5, height: 0.85, mass: 0.8 },
+  keycap: { halfW: 1.0, halfD: 1.0, radius: 1.05, height: 1.1, mass: 0.7 },
+  capo: { halfW: 4.3, halfD: 3.4, radius: 3.9, height: 2.0, mass: 2.5 },
+  candle: { halfW: 2.8, halfD: 2.8, radius: 2.9, height: 6.2, mass: 5.0 },
+  tea: { halfW: 5.5, halfD: 4.7, radius: 5.0, height: 7.0, mass: 8.0 },
+  coaster: { halfW: 5.4, halfD: 5.4, radius: 5.7, height: COASTER_H, mass: 3.5 },
+  baggie: { halfW: 2.05, halfD: 2.45, radius: 2.4, height: 0.75, mass: 0.55 },
 }
 
 const UP_Y = new THREE.Vector3(0, 1, 0)
@@ -292,8 +305,8 @@ function buildSucculent(t: ReturnType<typeof createTracker>): THREE.Group {
       metalness: 0.0,
     }),
   )
-  const soil = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(2.34, 2.25, 0.28, 32)), soilMat)
-  soil.position.y = 3.22
+  const soil = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(2.36, 2.25, 0.34, 32)), soilMat)
+  soil.position.y = 3.44
   g.add(soil)
 
   // Sculpted echeveria rosette (38 leaves arranged in golden-angle phyllotaxis)
@@ -308,16 +321,17 @@ function buildSucculent(t: ReturnType<typeof createTracker>): THREE.Group {
   )
 
   const rosette = new THREE.Group()
-  rosette.position.y = 3.44
+  rosette.position.y = 3.62
   const golden = 137.508 * (Math.PI / 180)
   const totalLeaves = 38
   for (let i = 0; i < totalLeaves; i++) {
     const f = i / (totalLeaves - 1) // 0 = tight center bud, 1 = wide outer ring
     const angle = i * golden
-    const scale = 0.42 + Math.pow(f, 0.72) * 1.38
-    const pitch = -1.24 + Math.pow(f, 0.68) * 1.16 // upright in center -> splayed horizontally outside
-    const r = 0.06 + Math.pow(f, 0.9) * 0.72
-    const yOff = (1 - f) * 0.44
+    const scale = 0.42 + Math.pow(f, 0.72) * 1.32
+    // Upright inner bud splaying gently upward over the terracotta rim so no leaf ever clips the pot
+    const pitch = -1.26 + Math.pow(f, 0.72) * 1.02
+    const r = 0.06 + Math.pow(f, 0.9) * 0.62
+    const yOff = (1 - f) * 0.42
 
     const leafPivot = new THREE.Group()
     leafPivot.position.set(Math.sin(angle) * r, yOff, Math.cos(angle) * r)
@@ -463,54 +477,185 @@ function makeD20NumTexture(num: number): THREE.CanvasTexture {
   return tex
 }
 
+/**
+ * Crisp polyhedral beveled icosahedron: 20 dead-flat equilateral triangular faces with subtle,
+ * tangent-continuous (G1) rounded edge fillets along all 30 edges and gently domed 12 corners.
+ * Preserves sharp geometric facet contrast like a real tumbled resin tabletop d20.
+ */
+function makeBeveledIcosahedronGeometry(radius: number, inset = 0.075): THREE.BufferGeometry {
+  const ref = new THREE.IcosahedronGeometry(radius, 0)
+  const pos = ref.attributes.position
+
+  // Deduplicate the 12 vertices
+  const verts: THREE.Vector3[] = []
+  const vertIndex = (v: THREE.Vector3) => {
+    for (let i = 0; i < verts.length; i++) {
+      if (verts[i].distanceToSquared(v) < 1e-6) return i
+    }
+    verts.push(v.clone())
+    return verts.length - 1
+  }
+
+  interface FaceInfo {
+    idx: [number, number, number]
+    normal: THREE.Vector3
+    center: THREE.Vector3
+    shrunk: [THREE.Vector3, THREE.Vector3, THREE.Vector3]
+  }
+  const faces: FaceInfo[] = []
+
+  for (let i = 0; i < 20; i++) {
+    const v0 = new THREE.Vector3().fromBufferAttribute(pos, i * 3)
+    const v1 = new THREE.Vector3().fromBufferAttribute(pos, i * 3 + 1)
+    const v2 = new THREE.Vector3().fromBufferAttribute(pos, i * 3 + 2)
+    const center = new THREE.Vector3().add(v0).add(v1).add(v2).divideScalar(3)
+    const n = new THREE.Vector3().crossVectors(v1.clone().sub(v0), v2.clone().sub(v0)).normalize()
+    const i0 = vertIndex(v0)
+    let i1 = vertIndex(v1)
+    let i2 = vertIndex(v2)
+    if (n.dot(center) < 0) {
+      n.negate()
+      const tmp = i1
+      i1 = i2
+      i2 = tmp
+    }
+    const p0 = verts[i0].clone().lerp(center, inset)
+    const p1 = verts[i1].clone().lerp(center, inset)
+    const p2 = verts[i2].clone().lerp(center, inset)
+    faces.push({ idx: [i0, i1, i2], normal: n, center, shrunk: [p0, p1, p2] })
+  }
+  ref.dispose()
+
+  const outPos: number[] = []
+  const outNorm: number[] = []
+  const pushTri = (
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    c: THREE.Vector3,
+    na: THREE.Vector3,
+    nb: THREE.Vector3,
+    nc: THREE.Vector3,
+  ) => {
+    outPos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z)
+    outNorm.push(na.x, na.y, na.z, nb.x, nb.y, nb.z, nc.x, nc.y, nc.z)
+  }
+
+  // 1. 20 crisp dead-flat triangular faces
+  for (const f of faces) {
+    pushTri(f.shrunk[0], f.shrunk[1], f.shrunk[2], f.normal, f.normal, f.normal)
+  }
+
+  // Map directed edges -> face + shrunk endpoints
+  const edgeMap = new Map<string, { f: FaceInfo; pStart: THREE.Vector3; pEnd: THREE.Vector3 }>()
+  for (const f of faces) {
+    for (let e = 0; e < 3; e++) {
+      const a = f.idx[e]
+      const b = f.idx[(e + 1) % 3]
+      edgeMap.set(`${a}_${b}`, { f, pStart: f.shrunk[e], pEnd: f.shrunk[(e + 1) % 3] })
+    }
+  }
+
+  // 2. 30 subtle G1-tangent rounded bevel strips bridging adjacent flat faces
+  const halfAngle = Math.acos(faces[0].normal.dot(faces[1].normal) > 0.5 ? faces[0].normal.dot(faces[1].normal) : 0.745356) * 0.5
+  const bulgeFactor = Math.tan(halfAngle * 0.5)
+  const visitedEdges = new Set<string>()
+  const BEVEL_SEGS = 3
+
+  for (const [key, e1] of edgeMap) {
+    const [aStr, bStr] = key.split('_')
+    const revKey = `${bStr}_${aStr}`
+    if (visitedEdges.has(key) || visitedEdges.has(revKey)) continue
+    const e2 = edgeMap.get(revKey)
+    if (!e2) continue
+    visitedEdges.add(key)
+
+    const n1 = e1.f.normal
+    const n2 = e2.f.normal
+    const nMid = n1.clone().add(n2).normalize()
+    // Edge runs from vertex a -> b on face 1 (pStart -> pEnd), and b -> a on face 2 (pStart -> pEnd)
+    const a1 = e1.pStart
+    const b1 = e1.pEnd
+    const a2 = e2.pEnd
+    const b2 = e2.pStart
+
+    const bulgeA = a1.distanceTo(a2) * 0.5 * bulgeFactor
+    const bulgeB = b1.distanceTo(b2) * 0.5 * bulgeFactor
+
+    const stripA: THREE.Vector3[] = []
+    const stripB: THREE.Vector3[] = []
+    const stripN: THREE.Vector3[] = []
+    for (let s = 0; s <= BEVEL_SEGS; s++) {
+      const t = s / BEVEL_SEGS
+      const arch = Math.sin(t * Math.PI)
+      stripA.push(a1.clone().lerp(a2, t).addScaledVector(nMid, bulgeA * arch))
+      stripB.push(b1.clone().lerp(b2, t).addScaledVector(nMid, bulgeB * arch))
+      stripN.push(n1.clone().lerp(n2, t).normalize())
+    }
+    for (let s = 0; s < BEVEL_SEGS; s++) {
+      // Outward winding from a1 -> b1 -> b2 -> a2
+      pushTri(stripA[s], stripA[s + 1], stripB[s], stripN[s], stripN[s + 1], stripN[s])
+      pushTri(stripB[s], stripA[s + 1], stripB[s + 1], stripN[s], stripN[s + 1], stripN[s + 1])
+    }
+  }
+
+  // 3. 12 tight smoothly-domed pentagonal vertex caps
+  for (let vi = 0; vi < verts.length; vi++) {
+    const vDir = verts[vi].clone().normalize()
+    const corners: { p: THREE.Vector3; n: THREE.Vector3; ang: number }[] = []
+    const refTan = Math.abs(vDir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)
+    const uAxis = new THREE.Vector3().crossVectors(refTan, vDir).normalize()
+    const wAxis = new THREE.Vector3().crossVectors(vDir, uAxis).normalize()
+
+    let avgProj = 0
+    let avgSpread = 0
+    for (const f of faces) {
+      const slot = f.idx.indexOf(vi)
+      if (slot < 0) continue
+      const p = f.shrunk[slot]
+      avgProj += p.dot(vDir)
+      const rel = p.clone().sub(verts[vi])
+      const u = rel.dot(uAxis)
+      const w = rel.dot(wAxis)
+      avgSpread += Math.hypot(u, w)
+      corners.push({ p, n: f.normal, ang: Math.atan2(w, u) })
+    }
+    corners.sort((a, b) => a.ang - b.ang)
+    avgProj /= corners.length
+    avgSpread /= corners.length
+    const apex = vDir.clone().multiplyScalar(avgProj + avgSpread * 0.24)
+
+    for (let k = 0; k < corners.length; k++) {
+      const c0 = corners[k]
+      const c1 = corners[(k + 1) % corners.length]
+      // Check outward winding against vDir
+      const triN = new THREE.Vector3().crossVectors(c0.p.clone().sub(apex), c1.p.clone().sub(apex))
+      if (triN.dot(vDir) >= 0) {
+        pushTri(apex, c0.p, c1.p, vDir, c0.n, c1.n)
+      } else {
+        pushTri(apex, c1.p, c0.p, vDir, c1.n, c0.n)
+      }
+    }
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(outPos, 3))
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(outNorm, 3))
+  geo.computeBoundingSphere()
+  return geo
+}
+
 function buildD20Mesh(t: ReturnType<typeof createTracker>): {
   dieGroup: THREE.Group
   restY: number
   faceQuats: Map<number, THREE.Quaternion>
 } {
-  const radius = 1.15 // ~21 mm across flats
-  const inradius = radius * 0.794654 // exact icosahedron center-to-face distance
+  const radius = 1.56 // chunky ~25 mm face-to-face tabletop d20 (~30 mm across corners)
+  const inradius = radius * 0.79465447 // exact icosahedron center-to-face distance
   const dieGroup = new THREE.Group()
-  const geo = t.geo(new THREE.IcosahedronGeometry(radius, 0))
 
-  const core = new THREE.Mesh(
-    t.geo(new THREE.IcosahedronGeometry(radius * 0.78, 0)),
-    t.mat(new THREE.MeshStandardMaterial({ color: '#460207', roughness: 0.45, metalness: 0.05 })),
-  )
-  dieGroup.add(core)
-
-  const shell = new THREE.Mesh(
-    geo,
-    t.mat(
-      new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color('#9c0612'),
-        emissive: new THREE.Color('#2a0005'),
-        emissiveIntensity: 0.45,
-        roughness: 0.1,
-        metalness: 0.04,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.05,
-        ior: 1.52,
-        flatShading: true,
-        transparent: true,
-        opacity: 0.88,
-        envMapIntensity: 1.4,
-      }),
-    ),
-  )
-  dieGroup.add(shell)
-
-  const edges = t.geo(new THREE.EdgesGeometry(geo, 1))
-  const edgeLines = new THREE.LineSegments(
-    edges,
-    t.mat(new THREE.LineBasicMaterial({ color: '#ff9ca4', transparent: true, opacity: 0.28 })),
-  )
-  dieGroup.add(edgeLines)
-
-  const posAttr = geo.attributes.position
-  const faceQuats = new Map<number, THREE.Quaternion>()
-  const labelGeo = t.geo(new THREE.PlaneGeometry(radius * 0.66, radius * 0.66))
-  const order = [20, 2, 14, 8, 12, 18, 4, 16, 6, 10, 1, 19, 7, 13, 9, 3, 17, 5, 15, 11]
+  const refGeo = new THREE.IcosahedronGeometry(radius, 0)
+  const posAttr = refGeo.attributes.position
+  const faceBasis: { normal: THREE.Vector3; right: THREE.Vector3; up: THREE.Vector3; center: THREE.Vector3 }[] = []
 
   for (let i = 0; i < 20; i++) {
     const v0 = new THREE.Vector3().fromBufferAttribute(posAttr, i * 3)
@@ -524,7 +669,45 @@ function buildD20Mesh(t: ReturnType<typeof createTracker>): {
     const up = new THREE.Vector3().subVectors(v0, center).normalize()
     const right = new THREE.Vector3().crossVectors(up, normal).normalize()
     up.crossVectors(normal, right).normalize()
+    faceBasis.push({ normal, right, up, center })
+  }
+  refGeo.dispose()
 
+  const beveledGeo = t.geo(makeBeveledIcosahedronGeometry(radius, 0.075))
+  const coreGeo = t.geo(new THREE.IcosahedronGeometry(radius * 0.76, 0))
+
+  const core = new THREE.Mesh(
+    coreGeo,
+    t.mat(new THREE.MeshStandardMaterial({ color: '#460207', roughness: 0.45, metalness: 0.05 })),
+  )
+  dieGroup.add(core)
+
+  const shell = new THREE.Mesh(
+    beveledGeo,
+    t.mat(
+      new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color('#9c0612'),
+        emissive: new THREE.Color('#2a0005'),
+        emissiveIntensity: 0.45,
+        roughness: 0.09,
+        metalness: 0.03,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.04,
+        ior: 1.52,
+        transparent: true,
+        opacity: 0.88,
+        envMapIntensity: 1.45,
+      }),
+    ),
+  )
+  dieGroup.add(shell)
+
+  const faceQuats = new Map<number, THREE.Quaternion>()
+  const labelGeo = t.geo(new THREE.PlaneGeometry(radius * 0.62, radius * 0.62))
+  const order = [20, 2, 14, 8, 12, 18, 4, 16, 6, 10, 1, 19, 7, 13, 9, 3, 17, 5, 15, 11]
+
+  for (let i = 0; i < 20; i++) {
+    const { normal, right, up, center } = faceBasis[i]
     const facePlaneQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, normal))
     // Align outward face normal -> +Y and numeral upright toward -Z (facing viewer)
     const uprightBasis = new THREE.Matrix4().makeBasis(right, normal, up.clone().negate())
@@ -1125,6 +1308,823 @@ function buildCapo(t: ReturnType<typeof createTracker>): THREE.Group {
 }
 
 /* ============================================================
+   7. AMBER GLASS APOTHECARY CANDLE (54 mm × 58 mm, live flame!)
+   ============================================================ */
+
+function makeCandleLabelTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 512
+  c.height = 256
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#eee8dc'
+  ctx.fillRect(0, 0, 512, 256)
+
+  ctx.strokeStyle = 'rgba(35, 32, 28, 0.22)'
+  ctx.lineWidth = 3
+  ctx.strokeRect(18, 18, 476, 220)
+
+  ctx.fillStyle = '#23201c'
+  ctx.textAlign = 'center'
+  ctx.font = '600 22px "Helvetica Neue", Helvetica, Arial, sans-serif'
+  ctx.fillText('NO. 04 · STUDIO', 256, 76)
+  ctx.font = '700 42px "Helvetica Neue", Helvetica, Arial, sans-serif'
+  ctx.fillText('CEDAR + AMBER', 256, 134)
+  ctx.font = '500 18px "Helvetica Neue", Helvetica, Arial, sans-serif'
+  ctx.fillStyle = '#6c6458'
+  ctx.fillText('HAND-POURED SOY WAX · 60G', 256, 186)
+
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  return tex
+}
+
+function makeGlowSpriteTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 128
+  c.height = 128
+  const ctx = c.getContext('2d')!
+  const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 62)
+  g.addColorStop(0, 'rgba(255, 240, 190, 0.9)')
+  g.addColorStop(0.32, 'rgba(255, 165, 58, 0.45)')
+  g.addColorStop(0.7, 'rgba(255, 110, 24, 0.12)')
+  g.addColorStop(1, 'rgba(255, 90, 10, 0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 128, 128)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+function buildCandle(t: ReturnType<typeof createTracker>): {
+  group: THREE.Group
+  update: (dt: number) => void
+  toggle: () => void
+} {
+  const g = new THREE.Group()
+  const R = 2.65
+  const H = 5.6
+
+  // Solid poured cream soy wax recessed inside the amber glass jar
+  const waxMat = t.mat(
+    new THREE.MeshStandardMaterial({
+      color: 0xf0e7d4,
+      emissive: 0x3a1c04,
+      emissiveIntensity: 0.42,
+      roughness: 0.62,
+      metalness: 0.0,
+    }),
+  )
+  const wax = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(R - 0.18, R - 0.24, H - 1.35, 32)), waxMat)
+  wax.position.y = (H - 1.35) * 0.5 + 0.34
+  g.add(wax)
+
+  // Melted glossy concave wax pool right around the wick
+  const poolMat = t.mat(
+    new THREE.MeshPhysicalMaterial({
+      color: 0xf4e3c0,
+      emissive: 0x5c2b06,
+      emissiveIntensity: 0.65,
+      roughness: 0.14,
+      clearcoat: 0.9,
+      transparent: true,
+      opacity: 0.9,
+    }),
+  )
+  const pool = new THREE.Mesh(t.geo(new THREE.CircleGeometry(R - 0.2, 32)).rotateX(-Math.PI / 2), poolMat)
+  pool.position.y = H - 0.98
+  g.add(pool)
+
+  // Translucent amber apothecary glass jar (base + cylinder + rounded lip)
+  const glassMat = t.mat(
+    new THREE.MeshPhysicalMaterial({
+      color: 0xb95f18,
+      roughness: 0.08,
+      metalness: 0.04,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.05,
+      ior: 1.52,
+      transparent: true,
+      opacity: 0.56,
+      envMapIntensity: 1.35,
+      depthWrite: false,
+    }),
+  )
+  const jarBase = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(R - 0.05, R - 0.12, 0.36, 36)), glassMat)
+  jarBase.position.y = 0.18
+  g.add(jarBase)
+
+  const jarWall = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(R, R - 0.08, H, 36, 1, true)), glassMat)
+  jarWall.position.y = H * 0.5
+  g.add(jarWall)
+
+  const jarLip = new THREE.Mesh(t.geo(new THREE.TorusGeometry(R - 0.04, 0.11, 12, 36)).rotateX(Math.PI / 2), glassMat)
+  jarLip.position.y = H - 0.04
+  g.add(jarLip)
+
+  // Wrap-around cream apothecary label on front arc of the jar
+  const labelTex = t.tex(makeCandleLabelTexture())
+  const labelGeo = t.geo(new THREE.CylinderGeometry(R + 0.025, R - 0.02, 2.55, 28, 1, true, -0.95, 1.9))
+  const label = new THREE.Mesh(
+    labelGeo,
+    t.mat(new THREE.MeshStandardMaterial({ map: labelTex, roughness: 0.84, metalness: 0.0 })),
+  )
+  label.position.y = 2.55
+  g.add(label)
+
+  // Charred dark braided cotton wick
+  const wick = new THREE.Mesh(
+    t.geo(new THREE.CylinderGeometry(0.055, 0.075, 0.72, 8)),
+    t.mat(new THREE.MeshStandardMaterial({ color: 0x1c1816, roughness: 0.95 })),
+  )
+  wick.position.set(0.04, H - 0.72, 0)
+  wick.rotation.z = -0.14
+  g.add(wick)
+
+  // Live flickering teardrop 3D flame + soft halo sprite + real warm PointLight
+  const flameGroup = new THREE.Group()
+  flameGroup.position.set(0.08, H - 0.42, 0)
+  g.add(flameGroup)
+
+  const outerFlameGeo = t.geo(new THREE.SphereGeometry(0.32, 16, 16))
+  outerFlameGeo.scale(0.68, 2.25, 0.68)
+  outerFlameGeo.translate(0, 0.52, 0)
+  const outerFlameMat = t.mat(
+    new THREE.MeshBasicMaterial({
+      color: 0xff9a28,
+      transparent: true,
+      opacity: 0.88,
+      depthWrite: false,
+    }),
+  )
+  const outerFlame = new THREE.Mesh(outerFlameGeo, outerFlameMat)
+  flameGroup.add(outerFlame)
+
+  const innerFlameGeo = t.geo(new THREE.SphereGeometry(0.18, 12, 12))
+  innerFlameGeo.scale(0.65, 1.9, 0.65)
+  innerFlameGeo.translate(0, 0.36, 0)
+  const innerFlame = new THREE.Mesh(
+    innerFlameGeo,
+    t.mat(new THREE.MeshBasicMaterial({ color: 0xfff7d6 })),
+  )
+  flameGroup.add(innerFlame)
+
+  const halo = new THREE.Sprite(
+    t.mat(
+      new THREE.SpriteMaterial({
+        map: t.tex(makeGlowSpriteTexture()),
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    ),
+  )
+  halo.position.y = 0.55
+  halo.scale.set(3.2, 3.2, 1)
+  flameGroup.add(halo)
+
+  const light = new THREE.PointLight(0xffa038, 22, 34, 1.8)
+  light.position.set(0, H + 0.6, 0)
+  g.add(light)
+
+  let lit = true
+  let phase = Math.random() * 100
+
+  return {
+    group: g,
+    toggle() {
+      lit = !lit
+      flameGroup.visible = lit
+      light.intensity = lit ? 22 : 0
+      waxMat.emissiveIntensity = lit ? 0.42 : 0
+      poolMat.emissiveIntensity = lit ? 0.65 : 0
+    },
+    update(dt: number) {
+      if (!lit) return
+      phase += dt
+      const f1 = Math.sin(phase * 11.3) * 0.5 + Math.sin(phase * 19.7 + 1.4) * 0.3 + Math.sin(phase * 29.1) * 0.2
+      const f2 = Math.cos(phase * 7.8 + 0.6)
+      flameGroup.rotation.z = f1 * 0.09
+      flameGroup.rotation.x = f2 * 0.06
+      const sy = 0.94 + f1 * 0.11
+      const sx = 1.0 - f1 * 0.05
+      flameGroup.scale.set(sx, sy, sx)
+      light.intensity = 20 + f1 * 4.2
+      halo.scale.set(3.0 + f1 * 0.35, 3.0 + f1 * 0.35, 1)
+    },
+  }
+}
+
+/* ============================================================
+   8. MATTE SPECKLED ARCHITECTURAL STONEWARE MUG OF TEA
+      (92 mm × 70 mm squat bevel-base body, solid tab handle, live steam!)
+   ============================================================ */
+
+function makeStonewareGlazeTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 512
+  c.height = 512
+  const ctx = c.getContext('2d')!
+
+  // Clean, refined satin-matte pale warm-stone studio stoneware glaze
+  const g = ctx.createLinearGradient(0, 0, 0, 512)
+  g.addColorStop(0, '#dedbd4')
+  g.addColorStop(0.55, '#d7d3cb')
+  g.addColorStop(1, '#d0ccc3')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 512, 512)
+
+  let seed = 62119
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647
+    return (seed - 1) / 2147483646
+  }
+
+  // Delicate, sparse high-fire stoneware mineral pinpoints (refined ceramic, never blotchy)
+  for (let i = 0; i < 240; i++) {
+    const x = rand() * 512
+    const y = rand() * 512
+    const accent = rand() > 0.94
+    const r = accent ? 0.85 + rand() * 0.3 : 0.35 + rand() * 0.4
+    const alpha = accent ? 0.22 + rand() * 0.12 : 0.08 + rand() * 0.11
+    ctx.fillStyle = `rgba(68, 62, 54, ${alpha})`
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // Ultra-fine porcelain/stoneware satin micro-texture
+  for (let i = 0; i < 650; i++) {
+    const x = rand() * 512
+    const y = rand() * 512
+    ctx.fillStyle = rand() > 0.5 ? 'rgba(255,253,249,0.035)' : 'rgba(84,78,70,0.025)'
+    ctx.fillRect(x, y, 1, 1)
+  }
+
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.wrapS = THREE.RepeatWrapping
+  tex.wrapT = THREE.RepeatWrapping
+  tex.anisotropy = 4
+  return tex
+}
+
+function makeRawClayBaseTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 256
+  c.height = 256
+  const ctx = c.getContext('2d')!
+
+  // Clean smooth unglazed raw stoneware clay foot
+  const g = ctx.createLinearGradient(0, 0, 0, 256)
+  g.addColorStop(0, '#7c756d')
+  g.addColorStop(0.6, '#716a62')
+  g.addColorStop(1, '#645e56')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 256, 256)
+
+  let seed = 31907
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647
+    return (seed - 1) / 2147483646
+  }
+  for (let i = 0; i < 520; i++) {
+    const x = rand() * 256
+    const y = rand() * 256
+    const r = 0.45 + rand() * 0.65
+    ctx.fillStyle = rand() > 0.45 ? 'rgba(42, 38, 33, 0.1)' : 'rgba(190, 182, 170, 0.08)'
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.wrapS = THREE.RepeatWrapping
+  tex.wrapT = THREE.RepeatWrapping
+  tex.anisotropy = 4
+  return tex
+}
+
+function makeSteamTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 128
+  c.height = 128
+  const ctx = c.getContext('2d')!
+  const g = ctx.createRadialGradient(64, 64, 6, 64, 64, 58)
+  g.addColorStop(0, 'rgba(255, 252, 246, 0.34)')
+  g.addColorStop(0.5, 'rgba(255, 250, 244, 0.14)')
+  g.addColorStop(1, 'rgba(255, 250, 244, 0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 128, 128)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+function makeTeaSurfaceTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 256
+  c.height = 256
+  const ctx = c.getContext('2d')!
+  // Rich realistic steeped black-tea depth: deep mahogany-amber center warming to golden honey at the ceramic wall
+  const g = ctx.createRadialGradient(128, 128, 12, 128, 128, 128)
+  g.addColorStop(0, '#4f1e07')
+  g.addColorStop(0.55, '#682a0a')
+  g.addColorStop(0.84, '#883c10')
+  g.addColorStop(0.96, '#a55219')
+  g.addColorStop(1, '#7a3b14')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 256, 256)
+
+  // Subtle organic micro tea-leaf steep flecks
+  let seed = 77419
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647
+    return (seed - 1) / 2147483646
+  }
+  for (let i = 0; i < 120; i++) {
+    const a = rand() * Math.PI * 2
+    const r = Math.sqrt(rand()) * 112
+    ctx.fillStyle = `rgba(34, 12, 3, ${0.14 + rand() * 0.2})`
+    ctx.beginPath()
+    ctx.arc(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 0.7 + rand() * 1.3, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+function buildTeaMug(t: ReturnType<typeof createTracker>): {
+  group: THREE.Group
+  update: (dt: number) => void
+} {
+  const g = new THREE.Group()
+
+  const glazeTex = t.tex(makeStonewareGlazeTexture())
+  const clayTex = t.tex(makeRawClayBaseTexture())
+
+  // Refined satin-matte studio ceramic glaze (DoubleSide so interior walls & floor are 100% solid opaque!)
+  const glazeMat = t.mat(
+    new THREE.MeshPhysicalMaterial({
+      map: glazeTex,
+      roughness: 0.64,
+      metalness: 0.01,
+      clearcoat: 0.14,
+      clearcoatRoughness: 0.52,
+      envMapIntensity: 0.42,
+      side: THREE.DoubleSide,
+    }),
+  )
+
+  // Unglazed raw dark-taupe stoneware clay lower tapered foot (DoubleSide solid base)
+  const rawClayMat = t.mat(
+    new THREE.MeshStandardMaterial({
+      map: clayTex,
+      roughness: 0.92,
+      metalness: 0.0,
+      envMapIntensity: 0.22,
+      side: THREE.DoubleSide,
+    }),
+  )
+
+  // 1. Lower unglazed chamfered base (flat foot r=3.05 tapering cleanly out to shoulder r=4.58 at y=1.66)
+  const baseProfile = [
+    new THREE.Vector2(0.0, 0.0),
+    new THREE.Vector2(3.02, 0.0),
+    new THREE.Vector2(3.2, 0.14),
+    new THREE.Vector2(3.68, 0.6),
+    new THREE.Vector2(4.18, 1.15),
+    new THREE.Vector2(4.56, 1.64),
+    new THREE.Vector2(4.58, 1.68),
+    new THREE.Vector2(4.1, 1.68),
+  ]
+  const baseMesh = new THREE.Mesh(t.geo(new THREE.LatheGeometry(baseProfile, 52)), rawClayMat)
+  g.add(baseMesh)
+
+  // 2. Upper straight architectural cylinder + clean rim + glazed smooth interior (r=4.62, H=7.0)
+  const bodyProfile = [
+    new THREE.Vector2(4.58, 1.66),
+    new THREE.Vector2(4.61, 2.0),
+    new THREE.Vector2(4.62, 4.4),
+    new THREE.Vector2(4.62, 6.74),
+    new THREE.Vector2(4.58, 6.91),
+    new THREE.Vector2(4.42, 7.0),
+    new THREE.Vector2(4.24, 6.96),
+    new THREE.Vector2(4.16, 6.78),
+    new THREE.Vector2(4.12, 2.2),
+    new THREE.Vector2(3.65, 1.15),
+    new THREE.Vector2(2.7, 0.72),
+    new THREE.Vector2(0.0, 0.68),
+  ]
+  const bodyMesh = new THREE.Mesh(t.geo(new THREE.LatheGeometry(bodyProfile, 52)), glazeMat)
+  g.add(bodyMesh)
+
+  // 3. Signature solid flat rectangular ceramic tab/fin handle (matte speckled glaze)
+  const tabHandle = new THREE.Mesh(
+    t.geo(new RoundedBoxGeometry(2.9, 3.45, 0.92, 4, 0.22)),
+    glazeMat,
+  )
+  tabHandle.position.set(5.45, 4.68, 0)
+  g.add(tabHandle)
+
+  // Subtle hand-slipped ceramic join fillet where the flat tab meets the cylinder wall
+  const tabFillet = new THREE.Mesh(
+    t.geo(new RoundedBoxGeometry(0.68, 3.64, 1.18, 3, 0.24)),
+    glazeMat,
+  )
+  tabFillet.position.set(4.46, 4.68, 0)
+  g.add(tabFillet)
+
+  // 4. Steeped rich amber-honey tea surface inside the wide squat mug (fully opaque so nothing beneath ever bleeds through!)
+  const Y_TEA = 5.65
+  const teaTex = t.tex(makeTeaSurfaceTexture())
+  const teaMat = t.mat(
+    new THREE.MeshPhysicalMaterial({
+      map: teaTex,
+      roughness: 0.05,
+      metalness: 0.02,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.04,
+      ior: 1.33,
+      envMapIntensity: 1.35,
+    }),
+  )
+  const teaDisk = new THREE.Mesh(t.geo(new THREE.CircleGeometry(4.14, 48)).rotateX(-Math.PI / 2), teaMat)
+  teaDisk.position.y = Y_TEA
+  g.add(teaDisk)
+
+  // Solid ceramic inner floor plug right above the base for guaranteed zero light-leakage from below
+  const innerFloor = new THREE.Mesh(t.geo(new THREE.CircleGeometry(3.8, 36)).rotateX(-Math.PI / 2), glazeMat)
+  innerFloor.position.y = 0.75
+  g.add(innerFloor)
+
+  // 5. Thin cotton tea-bag string draping cleanly over the opposite rim to a natural paper tag
+  const stringCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-1.8, 5.55, 0.9),
+    new THREE.Vector3(-3.3, 6.25, 1.45),
+    new THREE.Vector3(-4.22, 7.06, 1.78),
+    new THREE.Vector3(-4.72, 6.45, 1.98),
+    new THREE.Vector3(-4.84, 4.55, 2.04),
+  ])
+  const stringMesh = new THREE.Mesh(
+    t.geo(new THREE.TubeGeometry(stringCurve, 24, 0.045, 6, false)),
+    t.mat(new THREE.MeshStandardMaterial({ color: 0xf0ece2, roughness: 0.9 })),
+  )
+  g.add(stringMesh)
+
+  const tag = new THREE.Mesh(
+    t.geo(new RoundedBoxGeometry(1.15, 1.42, 0.08, 2, 0.03)),
+    t.mat(new THREE.MeshStandardMaterial({ color: 0xe6dfd1, roughness: 0.88 })),
+  )
+  tag.position.set(-4.84, 3.9, 2.04)
+  tag.rotation.y = Math.atan2(2.04, -4.84) + Math.PI / 2
+  g.add(tag)
+
+  // 6. Gently rising translucent 3D steam puffs
+  const steamTex = t.tex(makeSteamTexture())
+  const puffs: { sprite: THREE.Sprite; mat: THREE.SpriteMaterial; age: number; offset: number }[] = []
+  for (let i = 0; i < 4; i++) {
+    const mat = t.mat(
+      new THREE.SpriteMaterial({
+        map: steamTex,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      }),
+    )
+    const sprite = new THREE.Sprite(mat)
+    sprite.position.set(0, 6.2, 0)
+    g.add(sprite)
+    puffs.push({ sprite, mat, age: i * 0.25, offset: i * 1.7 })
+  }
+
+  return {
+    group: g,
+    update(dt: number) {
+      for (const p of puffs) {
+        p.age = (p.age + dt * 0.24) % 1
+        const u = p.age
+        p.sprite.position.set(
+          Math.sin(u * Math.PI * 2 + p.offset) * 0.95,
+          6.1 + u * 6.5,
+          Math.cos(u * Math.PI * 1.6 + p.offset) * 0.8,
+        )
+        const s = 1.8 + u * 4.0
+        p.sprite.scale.set(s, s * 1.15, 1)
+        p.mat.opacity = Math.sin(u * Math.PI) * 0.4
+      }
+    },
+  }
+}
+
+/* ============================================================
+   9. MINI ZIP-LOCK "FUN" BAGGIE (40 × 48 mm, solid pillowed 3D pouch)
+   ============================================================ */
+
+function makeBaggiePrintTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 512
+  c.height = 640
+  const ctx = c.getContext('2d')!
+
+  // Frosted pearlescent-clear polyethylene base (opaque/solid-feeling with soft ambient bounce)
+  const base = ctx.createLinearGradient(0, 0, 512, 640)
+  base.addColorStop(0, '#dde4ec')
+  base.addColorStop(0.35, '#eef3f8')
+  base.addColorStop(0.65, '#d5dde7')
+  base.addColorStop(1, '#e6ecf3')
+  ctx.fillStyle = base
+  ctx.fillRect(0, 0, 512, 640)
+
+  // Subtle pillowed interior air-cushion shading so the pouch reads with real 3D fullness
+  const pillow = ctx.createRadialGradient(256, 390, 36, 256, 390, 260)
+  pillow.addColorStop(0, 'rgba(255, 255, 255, 0.55)')
+  pillow.addColorStop(0.62, 'rgba(224, 232, 242, 0.16)')
+  pillow.addColorStop(1, 'rgba(130, 144, 162, 0.26)')
+  ctx.fillStyle = pillow
+  ctx.fillRect(0, 118, 512, 522)
+
+  // Glossy diagonal polyethylene crinkle sheen bands
+  const sheen = ctx.createLinearGradient(40, 60, 470, 580)
+  sheen.addColorStop(0, 'rgba(255,255,255,0.42)')
+  sheen.addColorStop(0.24, 'rgba(255,255,255,0.02)')
+  sheen.addColorStop(0.42, 'rgba(255,255,255,0.52)')
+  sheen.addColorStop(0.56, 'rgba(148,162,178,0.12)')
+  sheen.addColorStop(0.76, 'rgba(255,255,255,0.34)')
+  sheen.addColorStop(1, 'rgba(255,255,255,0.08)')
+  ctx.fillStyle = sheen
+  ctx.fillRect(0, 0, 512, 640)
+
+  // Crisp crimped heat-sealed side & bottom borders
+  ctx.strokeStyle = 'rgba(142, 154, 168, 0.58)'
+  ctx.lineWidth = 4
+  ctx.strokeRect(18, 12, 476, 616)
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.52)'
+  ctx.fillRect(0, 0, 18, 640)
+  ctx.fillRect(494, 0, 18, 640)
+  ctx.fillRect(0, 622, 512, 18)
+
+  // Fine diagonal crimp ticks along left & right heat-sealed edges
+  ctx.strokeStyle = 'rgba(136, 148, 162, 0.4)'
+  ctx.lineWidth = 2
+  for (let y = 10; y < 632; y += 10) {
+    ctx.beginPath()
+    ctx.moveTo(2, y)
+    ctx.lineTo(16, y + 6)
+    ctx.moveTo(496, y)
+    ctx.lineTo(510, y + 6)
+    ctx.stroke()
+  }
+
+  // Top flap region slightly cooler/thinner above the zip seal
+  ctx.fillStyle = 'rgba(166, 178, 194, 0.14)'
+  ctx.fillRect(18, 12, 476, 98)
+
+  // Signature coral-red zip-lock seal line + white inner lock groove
+  ctx.fillStyle = '#e03630'
+  ctx.fillRect(16, 110, 480, 18)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.78)'
+  ctx.fillRect(16, 128, 480, 7)
+  ctx.fillStyle = 'rgba(120, 26, 22, 0.25)'
+  ctx.fillRect(16, 135, 480, 4)
+
+  // Playful acid-house yellow smiley emblem printed cleanly on the pillowed front
+  const sx = 256
+  const sy = 392
+  const sr = 86
+  ctx.fillStyle = '#ffd526'
+  ctx.beginPath()
+  ctx.arc(sx, sy, sr, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = '#181816'
+  ctx.lineWidth = 9
+  ctx.stroke()
+
+  // Eyes & wide acid smiley grin
+  ctx.fillStyle = '#181816'
+  ctx.beginPath()
+  ctx.ellipse(sx - 27, sy - 22, 9.5, 16, 0, 0, Math.PI * 2)
+  ctx.ellipse(sx + 27, sy - 22, 9.5, 16, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.beginPath()
+  ctx.arc(sx, sy + 5, 49, 0.18 * Math.PI, 0.82 * Math.PI)
+  ctx.lineWidth = 9.5
+  ctx.lineCap = 'round'
+  ctx.stroke()
+
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 8
+  return tex
+}
+
+function buildBaggie(t: ReturnType<typeof createTracker>): THREE.Group {
+  const g = new THREE.Group()
+  const W = 4.0
+  const D = 4.8
+
+  // Real 3D pillowed polyethylene zip-lock pouch sitting strictly above y = 0 (never clips table!)
+  const geo = t.geo(new THREE.BoxGeometry(W, 1, D, 24, 2, 28))
+  const pos = geo.attributes.position
+
+  const surfaceHeights = (x: number, z: number): { bot: number; top: number } => {
+    const u = x / (W * 0.5) // -1..1
+    const v = z / (D * 0.5) // -1 (top flap) .. +1 (bottom edge)
+    const zipV = -0.62
+
+    // Sealed pillow pocket occupies v in [zipV + 0.09 .. +0.92], |u| < 0.90 (stays well clear of the red zip bar)
+    const uEdge = Math.max(0, 1 - Math.pow(Math.min(1, Math.abs(u) / 0.9), 2.4))
+    let vPillow = 0
+    if (v > zipV + 0.09 && v < 0.92) {
+      const vt = (v - (zipV + 0.09)) / (0.92 - (zipV + 0.09))
+      vPillow = Math.pow(Math.sin(vt * Math.PI), 0.72)
+    }
+
+    const puff = uEdge * vPillow * 0.28
+    const crinkle =
+      uEdge *
+      vPillow *
+      (Math.sin(x * 2.5 + z * 1.9) * 0.018 + Math.cos(x * 4.2 - z * 3.1) * 0.01)
+
+    // Subtle open-flap curl above the red zip seal
+    const flapLift = v < zipV - 0.04 ? Math.pow((zipV - 0.04 - v) / (0.96 + zipV), 1.55) * 0.09 : 0
+
+    // Bottom strictly >= 0.02 so the tabletop never pokes through!
+    const bot = 0.02 + flapLift * 0.35
+    const top = Math.max(bot + 0.07, 0.09 + puff + crinkle + flapLift)
+    return { bot, top }
+  }
+
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    const { bot, top } = surfaceHeights(x, z)
+    if (y > 0.1) pos.setY(i, top)
+    else if (y < -0.1) pos.setY(i, bot)
+    else pos.setY(i, (bot + top) * 0.5)
+  }
+  geo.computeVertexNormals()
+
+  const printTex = t.tex(makeBaggiePrintTexture())
+  const topMat = t.mat(
+    new THREE.MeshPhysicalMaterial({
+      map: printTex,
+      roughness: 0.18,
+      metalness: 0.04,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.07,
+      ior: 1.48,
+      envMapIntensity: 1.35,
+    }),
+  )
+  const sideMat = t.mat(
+    new THREE.MeshPhysicalMaterial({
+      color: 0xdce4ee,
+      roughness: 0.22,
+      metalness: 0.03,
+      clearcoat: 0.9,
+      clearcoatRoughness: 0.1,
+      envMapIntensity: 1.15,
+    }),
+  )
+  // BoxGeometry material groups: [+x, -x, +y (printed top), -y (bottom), +z, -z]
+  const pouch = new THREE.Mesh(geo, [sideMat, sideMat, topMat, sideMat, sideMat, sideMat])
+  g.add(pouch)
+
+  // Raised tactile 3D red zip-track ridge seated cleanly on the sculpted surface
+  const zipZ = -0.62 * (D * 0.5)
+  const zipH = surfaceHeights(0, zipZ).top
+  const zipTrack = new THREE.Mesh(
+    t.geo(new RoundedBoxGeometry(W - 0.16, 0.09, 0.13, 2, 0.025)),
+    t.mat(new THREE.MeshPhysicalMaterial({ color: 0xe2362f, roughness: 0.24, clearcoat: 0.85 })),
+  )
+  zipTrack.position.set(0, zipH + 0.04, zipZ)
+  g.add(zipTrack)
+
+  // Secondary crisp white interlock groove right beneath the red zip bar
+  const lockBead = new THREE.Mesh(
+    t.geo(new RoundedBoxGeometry(W - 0.2, 0.055, 0.07, 2, 0.02)),
+    t.mat(new THREE.MeshPhysicalMaterial({ color: 0xf4f7fb, roughness: 0.22, clearcoat: 0.8 })),
+  )
+  lockBead.position.set(0, zipH + 0.025, zipZ + 0.095)
+  g.add(lockBead)
+
+  // Slightly parted upper flap lip at the top edge for authentic zip-bag silhouette
+  const topLip = new THREE.Mesh(
+    t.geo(new RoundedBoxGeometry(W - 0.1, 0.035, 0.34, 2, 0.01)),
+    sideMat,
+  )
+  topLip.position.set(0, 0.2, -D * 0.5 + 0.2)
+  topLip.rotation.x = 0.18
+  g.add(topLip)
+
+  return g
+}
+
+/* ============================================================
+   10. RUSTIC CERAMIC TILE COASTER (108 × 108 × 8.4 mm, Pine Barrens!)
+   ============================================================ */
+
+function makeCoasterEdgeTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 256
+  c.height = 64
+  const ctx = c.getContext('2d')!
+  // Chalky matte handmade off-white ceramic/travertine tile edge
+  ctx.fillStyle = '#e7e2d7'
+  ctx.fillRect(0, 0, 256, 64)
+  let seed = 55109
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647
+    return (seed - 1) / 2147483646
+  }
+  for (let i = 0; i < 900; i++) {
+    const x = rand() * 256
+    const y = rand() * 64
+    const r = 0.6 + rand() * 1.8
+    ctx.fillStyle = rand() > 0.55 ? 'rgba(255,253,248,0.22)' : 'rgba(138,128,112,0.16)'
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  // Subtle uneven stone edge lip highlights
+  for (let i = 0; i < 36; i++) {
+    const x = rand() * 256
+    const w = 6 + rand() * 20
+    ctx.fillStyle = rand() > 0.5 ? 'rgba(255,252,245,0.14)' : 'rgba(116,106,92,0.12)'
+    ctx.fillRect(x, rand() * 58, w, 2 + rand() * 4)
+  }
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.wrapS = THREE.RepeatWrapping
+  tex.wrapT = THREE.RepeatWrapping
+  tex.anisotropy = 4
+  return tex
+}
+
+function buildCoaster(t: ReturnType<typeof createTracker>): THREE.Group {
+  const g = new THREE.Group()
+  const W = 10.8
+  const D = 10.8
+  const corkH = 0.08
+  const tileH = COASTER_H - corkH // 0.76
+
+  // 1. Dark natural cork backing pad inset slightly under the stone tile
+  const cork = new THREE.Mesh(
+    t.geo(new THREE.BoxGeometry(W - 0.55, corkH, D - 0.55)),
+    t.mat(new THREE.MeshStandardMaterial({ color: 0x5c4632, roughness: 0.96, metalness: 0.0 })),
+  )
+  cork.position.y = corkH * 0.5
+  g.add(cork)
+
+  // 2. Chunky rustic matte chalky-white travertine/ceramic tile slab
+  const edgeTex = t.tex(makeCoasterEdgeTexture())
+  const tileMat = t.mat(
+    new THREE.MeshStandardMaterial({
+      map: edgeTex,
+      roughness: 0.86,
+      metalness: 0.0,
+      envMapIntensity: 0.28,
+    }),
+  )
+  const slab = new THREE.Mesh(
+    t.geo(new RoundedBoxGeometry(W, tileH, D, 3, 0.085)),
+    tileMat,
+  )
+  slab.position.y = corkH + tileH * 0.5
+  g.add(slab)
+
+  // 3. Exact 100%-faithful photo-rectified coaster top artwork with subtle decoupage satin sheen
+  const topTex = t.tex(new THREE.TextureLoader().load(coasterTopUrl))
+  topTex.colorSpace = THREE.SRGBColorSpace
+  topTex.anisotropy = 8
+  const topMat = t.mat(
+    new THREE.MeshPhysicalMaterial({
+      map: topTex,
+      roughness: 0.44,
+      metalness: 0.0,
+      clearcoat: 0.26,
+      clearcoatRoughness: 0.36,
+      envMapIntensity: 0.52,
+    }),
+  )
+  const topFace = new THREE.Mesh(
+    t.geo(new THREE.PlaneGeometry(W - 0.14, D - 0.14)).rotateX(-Math.PI / 2),
+    topMat,
+  )
+  topFace.position.y = COASTER_H + 0.004
+  g.add(topFace)
+
+  return g
+}
+
+/* ============================================================
    BOUNCE PHYSICS & UNIFIED PROP RIG BUILDER
    ============================================================ */
 
@@ -1156,6 +2156,8 @@ export function buildProp3D(id: PropId, initialFace = 1): PropRig3D {
   let dieMesh: THREE.Group | null = null
   let restY = 0
   let curFace = initialFace
+  let ambientUpdate: ((dt: number) => void) | null = null
+  let clickAction: (() => void) | undefined = undefined
 
   if (id === 'succulent') {
     body.add(buildSucculent(tracker))
@@ -1177,11 +2179,37 @@ export function buildProp3D(id: PropId, initialFace = 1): PropRig3D {
     body.add(buildPencil(tracker))
   } else if (id === 'keycap') {
     body.add(buildKeycap(tracker))
-  } else {
+  } else if (id === 'capo') {
     body.add(buildCapo(tracker))
+  } else if (id === 'candle') {
+    const c = buildCandle(tracker)
+    body.add(c.group)
+    ambientUpdate = c.update
+    clickAction = c.toggle
+  } else if (id === 'tea') {
+    const m = buildTeaMug(tracker)
+    body.add(m.group)
+    ambientUpdate = m.update
+  } else if (id === 'coaster') {
+    body.add(buildCoaster(tracker))
+  } else {
+    body.add(buildBaggie(tracker))
   }
 
   tagProp(root, id)
+  // Keep transparent glass/flame/steam/grab-hit meshes from casting solid opaque shadow silhouettes
+  if (id === 'candle' || id === 'tea') {
+    root.traverse((obj) => {
+      if (obj instanceof THREE.Sprite) obj.castShadow = false
+      if (obj instanceof THREE.Mesh) {
+        const mat = obj.material as THREE.Material
+        if ('transparent' in mat && mat.transparent && (id !== 'tea' || mat.opacity < 0.5)) {
+          obj.castShadow = false
+          obj.receiveShadow = false
+        }
+      }
+    })
+  }
 
   const applyFaceImmediate = (face: number) => {
     curFace = face
@@ -1252,8 +2280,10 @@ export function buildProp3D(id: PropId, initialFace = 1): PropRig3D {
     settle() {
       settleAnim = { t: 0, dur: 0.22 }
     },
+    onClick: clickAction,
     update(dt: number) {
       let active = false
+      ambientUpdate?.(dt)
       if (rollAnim && dieMesh) {
         rollAnim.t = Math.min(rollAnim.dur, rollAnim.t + dt)
         const u = rollAnim.t / rollAnim.dur

@@ -133,51 +133,146 @@ function makeNumTexture(num: number): THREE.CanvasTexture {
   return tex
 }
 
+function makeBeveledIcosahedron(radius: number, inset = 0.075): THREE.BufferGeometry {
+  const ref = new THREE.IcosahedronGeometry(radius, 0)
+  const pos = ref.attributes.position
+  const verts: THREE.Vector3[] = []
+  const vertIndex = (v: THREE.Vector3) => {
+    for (let i = 0; i < verts.length; i++) {
+      if (verts[i].distanceToSquared(v) < 1e-6) return i
+    }
+    verts.push(v.clone())
+    return verts.length - 1
+  }
+  interface FaceInfo {
+    idx: [number, number, number]
+    normal: THREE.Vector3
+    shrunk: [THREE.Vector3, THREE.Vector3, THREE.Vector3]
+  }
+  const faces: FaceInfo[] = []
+  for (let i = 0; i < 20; i++) {
+    const v0 = new THREE.Vector3().fromBufferAttribute(pos, i * 3)
+    const v1 = new THREE.Vector3().fromBufferAttribute(pos, i * 3 + 1)
+    const v2 = new THREE.Vector3().fromBufferAttribute(pos, i * 3 + 2)
+    const center = new THREE.Vector3().add(v0).add(v1).add(v2).divideScalar(3)
+    const n = new THREE.Vector3().crossVectors(v1.clone().sub(v0), v2.clone().sub(v0)).normalize()
+    const i0 = vertIndex(v0)
+    let i1 = vertIndex(v1)
+    let i2 = vertIndex(v2)
+    if (n.dot(center) < 0) {
+      n.negate()
+      const tmp = i1
+      i1 = i2
+      i2 = tmp
+    }
+    faces.push({
+      idx: [i0, i1, i2],
+      normal: n,
+      shrunk: [
+        verts[i0].clone().lerp(center, inset),
+        verts[i1].clone().lerp(center, inset),
+        verts[i2].clone().lerp(center, inset),
+      ],
+    })
+  }
+  ref.dispose()
+
+  const outPos: number[] = []
+  const outNorm: number[] = []
+  const pushTri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, na: THREE.Vector3, nb: THREE.Vector3, nc: THREE.Vector3) => {
+    outPos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z)
+    outNorm.push(na.x, na.y, na.z, nb.x, nb.y, nb.z, nc.x, nc.y, nc.z)
+  }
+
+  for (const f of faces) pushTri(f.shrunk[0], f.shrunk[1], f.shrunk[2], f.normal, f.normal, f.normal)
+
+  const edgeMap = new Map<string, { f: FaceInfo; pStart: THREE.Vector3; pEnd: THREE.Vector3 }>()
+  for (const f of faces) {
+    for (let e = 0; e < 3; e++) {
+      edgeMap.set(`${f.idx[e]}_${f.idx[(e + 1) % 3]}`, { f, pStart: f.shrunk[e], pEnd: f.shrunk[(e + 1) % 3] })
+    }
+  }
+
+  const bulgeFactor = Math.tan(Math.acos(0.745356) * 0.25)
+  const visited = new Set<string>()
+  const SEGS = 3
+  for (const [key, e1] of edgeMap) {
+    const [aStr, bStr] = key.split('_')
+    const rev = `${bStr}_${aStr}`
+    if (visited.has(key) || visited.has(rev)) continue
+    const e2 = edgeMap.get(rev)
+    if (!e2) continue
+    visited.add(key)
+    const n1 = e1.f.normal
+    const n2 = e2.f.normal
+    const nMid = n1.clone().add(n2).normalize()
+    const a1 = e1.pStart
+    const b1 = e1.pEnd
+    const a2 = e2.pEnd
+    const b2 = e2.pStart
+    const bulgeA = a1.distanceTo(a2) * 0.5 * bulgeFactor
+    const bulgeB = b1.distanceTo(b2) * 0.5 * bulgeFactor
+    const sA: THREE.Vector3[] = []
+    const sB: THREE.Vector3[] = []
+    const sN: THREE.Vector3[] = []
+    for (let s = 0; s <= SEGS; s++) {
+      const t = s / SEGS
+      const arch = Math.sin(t * Math.PI)
+      sA.push(a1.clone().lerp(a2, t).addScaledVector(nMid, bulgeA * arch))
+      sB.push(b1.clone().lerp(b2, t).addScaledVector(nMid, bulgeB * arch))
+      sN.push(n1.clone().lerp(n2, t).normalize())
+    }
+    for (let s = 0; s < SEGS; s++) {
+      pushTri(sA[s], sA[s + 1], sB[s], sN[s], sN[s + 1], sN[s])
+      pushTri(sB[s], sA[s + 1], sB[s + 1], sN[s], sN[s + 1], sN[s + 1])
+    }
+  }
+
+  for (let vi = 0; vi < verts.length; vi++) {
+    const vDir = verts[vi].clone().normalize()
+    const refTan = Math.abs(vDir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)
+    const uAxis = new THREE.Vector3().crossVectors(refTan, vDir).normalize()
+    const wAxis = new THREE.Vector3().crossVectors(vDir, uAxis).normalize()
+    const corners: { p: THREE.Vector3; n: THREE.Vector3; ang: number }[] = []
+    let avgProj = 0
+    let avgSpread = 0
+    for (const f of faces) {
+      const slot = f.idx.indexOf(vi)
+      if (slot < 0) continue
+      const p = f.shrunk[slot]
+      avgProj += p.dot(vDir)
+      const rel = p.clone().sub(verts[vi])
+      const u = rel.dot(uAxis)
+      const w = rel.dot(wAxis)
+      avgSpread += Math.hypot(u, w)
+      corners.push({ p, n: f.normal, ang: Math.atan2(w, u) })
+    }
+    corners.sort((a, b) => a.ang - b.ang)
+    avgProj /= corners.length
+    avgSpread /= corners.length
+    const apex = vDir.clone().multiplyScalar(avgProj + avgSpread * 0.24)
+    for (let k = 0; k < corners.length; k++) {
+      const c0 = corners[k]
+      const c1 = corners[(k + 1) % corners.length]
+      const triN = new THREE.Vector3().crossVectors(c0.p.clone().sub(apex), c1.p.clone().sub(apex))
+      if (triN.dot(vDir) >= 0) pushTri(apex, c0.p, c1.p, vDir, c0.n, c1.n)
+      else pushTri(apex, c1.p, c0.p, vDir, c1.n, c0.n)
+    }
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(outPos, 3))
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(outNorm, 3))
+  geo.computeBoundingSphere()
+  return geo
+}
+
 function buildD20(): { group: THREE.Group; faceQuats: Map<number, THREE.Quaternion>; textures: THREE.Texture[] } {
   const group = new THREE.Group()
-  const radius = 0.62
-  const geo = new THREE.IcosahedronGeometry(radius, 0)
-
-  // Deep ruby core inside the crystal icosahedron
-  const coreGeo = new THREE.IcosahedronGeometry(radius * 0.78, 0)
-  const coreMat = new THREE.MeshStandardMaterial({
-    color: '#460207',
-    roughness: 0.45,
-    metalness: 0.05,
-  })
-  group.add(new THREE.Mesh(coreGeo, coreMat))
-
-  // Glossy faceted translucent crimson resin shell
-  const shellMat = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#9c0612'),
-    emissive: new THREE.Color('#2a0005'),
-    emissiveIntensity: 0.5,
-    roughness: 0.1,
-    metalness: 0.04,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.05,
-    reflectivity: 1.0,
-    ior: 1.52,
-    flatShading: true,
-    transparent: true,
-    opacity: 0.88,
-    envMapIntensity: 1.5,
-  })
-  group.add(new THREE.Mesh(geo, shellMat))
-
-  // Crisp subtle specular edge highlights along the 30 crystal facet edges
-  const edges = new THREE.EdgesGeometry(geo, 1)
-  const edgeMat = new THREE.LineBasicMaterial({ color: '#ff9ca4', transparent: true, opacity: 0.28 })
-  group.add(new THREE.LineSegments(edges, edgeMat))
-
-  // Map 20 faces -> numbers 1..20 with exact engraved decals & face-up quaternions
-  const posAttr = geo.attributes.position
-  const faceQuats = new Map<number, THREE.Quaternion>()
-  const textures: THREE.Texture[] = []
-  const labelGeo = new THREE.PlaneGeometry(radius * 0.66, radius * 0.66)
-
-  // Pair opposite faces roughly so high/low numbers distribute evenly across the die
-  const order = [20, 2, 14, 8, 12, 18, 4, 16, 6, 10, 1, 19, 7, 13, 9, 3, 17, 5, 15, 11]
+  const radius = 0.66
+  const refGeo = new THREE.IcosahedronGeometry(radius, 0)
+  const posAttr = refGeo.attributes.position
+  const faceBasis: { normal: THREE.Vector3; right: THREE.Vector3; up: THREE.Vector3; center: THREE.Vector3 }[] = []
 
   for (let i = 0; i < 20; i++) {
     const v0 = new THREE.Vector3().fromBufferAttribute(posAttr, i * 3)
@@ -187,14 +282,52 @@ function buildD20(): { group: THREE.Group; faceQuats: Map<number, THREE.Quaterni
     const e1 = new THREE.Vector3().subVectors(v1, v0)
     const e2 = new THREE.Vector3().subVectors(v2, v0)
     const normal = new THREE.Vector3().crossVectors(e1, e2).normalize()
-    // Ensure outward normal
     if (normal.dot(center) < 0) normal.negate()
-    // Point numeral upright toward v0
     const up = new THREE.Vector3().subVectors(v0, center).normalize()
     const right = new THREE.Vector3().crossVectors(up, normal).normalize()
-    // Re-orthogonalize up
     up.crossVectors(normal, right).normalize()
+    faceBasis.push({ normal, right, up, center })
+  }
+  refGeo.dispose()
 
+  const geo = makeBeveledIcosahedron(radius, 0.075)
+  const coreGeo = new THREE.IcosahedronGeometry(radius * 0.76, 0)
+
+  // Deep ruby core inside the crisp beveled resin icosahedron
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: '#460207',
+    roughness: 0.45,
+    metalness: 0.05,
+  })
+  group.add(new THREE.Mesh(coreGeo, coreMat))
+
+  // Glossy crisp translucent crimson resin shell with tight rounded bevels
+  const shellMat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color('#9c0612'),
+    emissive: new THREE.Color('#2a0005'),
+    emissiveIntensity: 0.5,
+    roughness: 0.09,
+    metalness: 0.03,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.04,
+    reflectivity: 1.0,
+    ior: 1.52,
+    transparent: true,
+    opacity: 0.88,
+    envMapIntensity: 1.5,
+  })
+  group.add(new THREE.Mesh(geo, shellMat))
+
+  // Map 20 faces -> numbers 1..20 with exact engraved decals & face-up quaternions
+  const faceQuats = new Map<number, THREE.Quaternion>()
+  const textures: THREE.Texture[] = []
+  const labelGeo = new THREE.PlaneGeometry(radius * 0.62, radius * 0.62)
+
+  // Pair opposite faces roughly so high/low numbers distribute evenly across the die
+  const order = [20, 2, 14, 8, 12, 18, 4, 16, 6, 10, 1, 19, 7, 13, 9, 3, 17, 5, 15, 11]
+
+  for (let i = 0; i < 20; i++) {
+    const { normal, right, up, center } = faceBasis[i]
     const basis = new THREE.Matrix4().makeBasis(right, up, normal)
     const faceQ = new THREE.Quaternion().setFromRotationMatrix(basis)
     const num = order[i]

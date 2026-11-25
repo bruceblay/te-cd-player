@@ -25,7 +25,7 @@ const DECKS_KEY = 'bc1.decks'
 const MIXER_KEY = 'bc1.mixer'
 const VIEW_KEY = 'bc1.view'
 const SURFACE_KEY = 'bc1.surface'
-const HAND_STYLE_KEY = 'bc1.handStyle'
+const HAND_STYLE_KEY = 'bc1.handStyle.v2'
 const HAND_STYLE_IDS = new Set<string>(HAND_STYLES.map((s) => s.id))
 
 export function readSurface(): SurfaceMode {
@@ -67,9 +67,9 @@ export function readHandStyle(): HandStyle {
     const requested = new URLSearchParams(window.location.search).get('handStyle')
     if (requested && HAND_STYLE_IDS.has(requested)) return requested as HandStyle
     const v = localStorage.getItem(HAND_STYLE_KEY)
-    return v && HAND_STYLE_IDS.has(v) ? (v as HandStyle) : 'man'
+    return v && HAND_STYLE_IDS.has(v) ? (v as HandStyle) : 'goblin'
   } catch {
-    return 'man'
+    return 'goblin'
   }
 }
 
