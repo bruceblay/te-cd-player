@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { renderHands, type HandStyle, type Pt, type RenderedHand } from './handRender'
+import { snapToTarget, type HandTarget } from './handTargets'
+import { OneEuro } from './oneEuro'
 
 export interface HandStatus {
   state: 'off' | 'loading' | 'active' | 'error'
@@ -16,6 +18,10 @@ const MARGIN = 0.08
 const SMOOTH = 0.45
 const PINCH_ON = 0.38
 const PINCH_OFF = 0.50
+/** a pinch lands where the cursor was this long ago, before the fingers started closing */
+const REWIND_MS = 110
+/** a pinch released this quickly is a click, however much the hand jittered */
+const TAP_MS = 320
 
 interface HandSlot {
   id: number
@@ -25,7 +31,35 @@ interface HandSlot {
   downAt: Pt
   world?: Pt[]
   lastSeen: number
+  /** aim smoothing, one filter per axis */
+  fx: OneEuro
+  fy: OneEuro
+  /** knuckles-to-fingertip offset, learned while the hand is open and frozen while pinching */
+  offset: Pt | null
+  /** the damped aim point last frame */
+  aim: Pt | null
+  /** recent aim points, for landing a pinch where the cursor was before it started */
+  history: { t: number; x: number; y: number }[]
+  /** the aim point at pinch-down, so drags move relative to the snapped press point */
+  aimAtDown: Pt
+  downTime: number
 }
+
+const newSlot = (id: number): HandSlot => ({
+  id,
+  pts: null,
+  pinched: false,
+  target: null,
+  downAt: { x: 0, y: 0 },
+  lastSeen: 0,
+  fx: new OneEuro(1, 0.007),
+  fy: new OneEuro(1, 0.007),
+  offset: null,
+  aim: null,
+  history: [],
+  aimAtDown: { x: 0, y: 0 },
+  downTime: 0,
+})
 
 function mapCoord(nx: number, ny: number, nz: number, w: number, h: number): Pt {
   const mx = (1 - nx - MARGIN) / (1 - 2 * MARGIN)
@@ -63,8 +97,9 @@ function releaseSlot(slot: HandSlot, at?: Pt) {
   slot.target = null
   if (!target || !target.isConnected) return
   target.dispatchEvent(makePointer('pointerup', slot.id, p, false))
-  // Pinch-tap: fire click so standard buttons, LCD pills, checkboxes & drawer controls work seamlessly
-  if (Math.hypot(p.x - slot.downAt.x, p.y - slot.downAt.y) < 22) {
+  // Pinch-tap: fire click so standard buttons, LCD pills, checkboxes & drawer controls work seamlessly.
+  // A quick pinch always counts, so hand jitter can't swallow a click.
+  if (Math.hypot(p.x - slot.downAt.x, p.y - slot.downAt.y) < 22 || performance.now() - slot.downTime < TAP_MS) {
     target.dispatchEvent(
       new MouseEvent('click', {
         bubbles: true,
@@ -107,10 +142,7 @@ export function HandTracker({
     let mesh: Awaited<ReturnType<typeof import('./handMesh').createHandMesh>> | undefined
     let meshRequested = false
 
-    const slots: [HandSlot, HandSlot] = [
-      { id: 101, pts: null, pinched: false, target: null, downAt: { x: 0, y: 0 }, lastSeen: 0 },
-      { id: 102, pts: null, pinched: false, target: null, downAt: { x: 0, y: 0 }, lastSeen: 0 },
-    ]
+    const slots: [HandSlot, HandSlot] = [newSlot(101), newSlot(102)]
     let lastFallback = false
     let lastHandCount = -1
     let lastVideoTime = -1
@@ -272,6 +304,11 @@ export function HandTracker({
                 releaseSlot(slot)
                 slot.pts = null
                 slot.world = undefined
+                slot.fx.reset()
+                slot.fy.reset()
+                slot.offset = null
+                slot.aim = null
+                slot.history = []
               }
               continue
             }
@@ -292,23 +329,59 @@ export function HandTracker({
             const strength = Math.max(0, Math.min(1, (0.7 - pinchDist) / 0.35))
             const nextPinched = slot.pinched ? pinchDist < PINCH_OFF : pinchDist < PINCH_ON
 
-            const cursor: Pt = nextPinched
-              ? { x: (pts[4].x + pts[8].x) * 0.5, y: (pts[4].y + pts[8].y) * 0.5 }
-              : { x: pts[8].x, y: pts[8].y }
+            // Aim from the index and middle knuckles, which barely move when you pinch (the
+            // fingertip does). An offset learned with the hand open keeps the cursor at the fingertip.
+            const knuckles = { x: (raw[5].x + raw[9].x) / 2, y: (raw[5].y + raw[9].y) / 2 }
+            const tipOffset = { x: raw[8].x - knuckles.x, y: raw[8].y - knuckles.y }
+            if (!slot.offset) slot.offset = tipOffset
+            else if (!slot.pinched && strength < 0.15) {
+              slot.offset = { x: slot.offset.x + (tipOffset.x - slot.offset.x) * 0.12, y: slot.offset.y + (tipOffset.y - slot.offset.y) * 0.12 }
+            }
+            let aim: Pt = {
+              x: slot.fx.filter(knuckles.x + slot.offset.x, now),
+              y: slot.fy.filter(knuckles.y + slot.offset.y, now),
+            }
+            // As the fingers close, damp the cursor so the pinch motion can't drag it off target
+            if (!slot.pinched && slot.aim && strength > 0.15) {
+              const keep = 1 - 0.85 * Math.min(1, (strength - 0.15) / 0.6)
+              aim = { x: slot.aim.x + (aim.x - slot.aim.x) * keep, y: slot.aim.y + (aim.y - slot.aim.y) * keep }
+            }
+            aim.x = Math.max(0, Math.min(w - 1, aim.x))
+            aim.y = Math.max(0, Math.min(h - 1, aim.y))
+            slot.aim = aim
+            slot.history.push({ t: now, x: aim.x, y: aim.y })
+            while (slot.history.length > 2 && now - slot.history[0].t > 400) slot.history.shift()
 
-            cursor.x = Math.max(0, Math.min(w - 1, cursor.x))
-            cursor.y = Math.max(0, Math.min(h - 1, cursor.y))
-
+            let cursor: Pt = aim
+            let snapped: HandTarget | null = null
             if (nextPinched && !slot.pinched) {
+              // land the press where the cursor was just before the pinch began, snapped to the nearest control
+              const before = [...slot.history].reverse().find((e) => now - e.t >= REWIND_MS) ?? slot.history[0]
+              const press = snapToTarget(before.x, before.y, now)
+              cursor = press ? { x: press.x, y: press.y } : { x: before.x, y: before.y }
+              snapped = press?.target ?? null
               slot.pinched = true
               slot.downAt = { ...cursor }
+              slot.aimAtDown = { ...aim }
+              slot.downTime = now
               const el = document.elementFromPoint(cursor.x, cursor.y)
               slot.target = el
               el?.dispatchEvent(makePointer('pointerdown', slot.id, cursor, true))
             } else if (nextPinched && slot.pinched) {
+              // drags move relative to the press point
+              cursor = {
+                x: Math.max(0, Math.min(w - 1, slot.downAt.x + aim.x - slot.aimAtDown.x)),
+                y: Math.max(0, Math.min(h - 1, slot.downAt.y + aim.y - slot.aimAtDown.y)),
+              }
               slot.target?.dispatchEvent(makePointer('pointermove', slot.id, cursor, true))
-            } else if (!nextPinched && slot.pinched) {
-              releaseSlot(slot, cursor)
+            } else {
+              if (slot.pinched) releaseSlot(slot, { x: slot.downAt.x + aim.x - slot.aimAtDown.x, y: slot.downAt.y + aim.y - slot.aimAtDown.y })
+              // open hand: show where a pinch would land
+              const hover = snapToTarget(aim.x, aim.y, now)
+              if (hover) {
+                cursor = { x: hover.x, y: hover.y }
+                snapped = hover.target
+              }
             }
 
             const detection = rawHands.indexOf(raw)
@@ -322,7 +395,7 @@ export function HandTracker({
                 z: q.z! + (p.z - q.z!) * SMOOTH,
               } : p
             })
-            rendered.push({ slot: i, world: slot.world, side: side === 'Left' ? 'Left' : 'Right', pts, cursor, pinched: slot.pinched, pinchStrength: strength })
+            rendered.push({ slot: i, world: slot.world, side: side === 'Left' ? 'Left' : 'Right', pts, cursor, pinched: slot.pinched, pinchStrength: strength, snap: snapped })
           }
 
           const ctx = c.getContext('2d')

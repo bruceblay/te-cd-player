@@ -13,6 +13,7 @@ import { buildStudioRoom } from './buildStudioRoom'
 import { IS_PHONE } from '../ui/phone'
 import { track } from '../analytics'
 import { bootFrameDrawn, bootWith3DTextures } from '../ui/boot'
+import { addHandTargets, type HandTarget } from '../ui/handTargets'
 import type { PlacedProp, PropId } from '../ui/DeskProps'
 import {
   createStudioEnvironment,
@@ -1065,6 +1066,39 @@ export function Studio3D({
       return null
     }
 
+    // Hand-tracking snap targets: each scene control and desk item as a screen rectangle
+    const snapBox = new THREE.Box3()
+    const snapCorner = new THREE.Vector3()
+    const removeHandTargets = addHandTargets(() => {
+      const rect = renderer.domElement.getBoundingClientRect()
+      const roots: THREE.Object3D[] = [bc1Rigs[0].group]
+      if (bc1Rigs[1].group.visible) roots.push(bc1Rigs[1].group)
+      if (sidekickRig && sidekickRig.group.visible) roots.push(sidekickRig.group)
+      if (propsRef.current.propsOn && propsGroup.visible) roots.push(propsGroup)
+      const out: HandTarget[] = []
+      camera.updateMatrixWorld()
+      for (const root of roots) {
+        root.traverseVisible((obj) => {
+          const tag = obj.userData?.control ?? obj.userData?.propId
+          // only the outermost object carrying a tag: its children share it
+          if (!tag || (obj.parent && (obj.parent.userData?.control ?? obj.parent.userData?.propId) === tag)) return
+          snapBox.setFromObject(obj)
+          if (snapBox.isEmpty()) return
+          let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+          for (let i = 0; i < 8; i++) {
+            snapCorner.set(i & 1 ? snapBox.max.x : snapBox.min.x, i & 2 ? snapBox.max.y : snapBox.min.y, i & 4 ? snapBox.max.z : snapBox.min.z)
+            snapCorner.project(camera)
+            if (snapCorner.z > 1) return // behind the camera
+            const sx = rect.left + ((snapCorner.x + 1) / 2) * rect.width
+            const sy = rect.top + ((1 - snapCorner.y) / 2) * rect.height
+            left = Math.min(left, sx); right = Math.max(right, sx); top = Math.min(top, sy); bottom = Math.max(bottom, sy)
+          }
+          out.push({ left, top, right, bottom })
+        })
+      }
+      return out
+    })
+
     const intersectDragPlane = (clientX: number, clientY: number, y: number): THREE.Vector3 | null => {
       const rect = renderer.domElement.getBoundingClientRect()
       ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1
@@ -1633,6 +1667,7 @@ export function Studio3D({
       bc1Rigs[0].dispose()
       bc1Rigs[1].dispose()
       sidekickRig?.dispose()
+      removeHandTargets()
       studioRoom.dispose()
       for (const live of propRigs.values()) live.rig.dispose()
       propRigs.clear()

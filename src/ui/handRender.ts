@@ -24,6 +24,8 @@ export interface RenderedHand {
   cursor: Pt
   pinched: boolean
   pinchStrength: number // 0..1
+  /** the control the cursor has snapped to, outlined so you can see what a pinch will hit */
+  snap?: { left: number; top: number; right: number; bottom: number } | null
 }
 
 const BONES: [number, number][] = [
@@ -186,6 +188,19 @@ function paintSolidPalm(
   capsule(ctx, thumbCmc, palmCenter, baseR * 1.12 + expand, baseR * 1.35 + expand)
   capsule(ctx, wristL, wristR, baseR * 1.15 + expand, baseR * 1.1 + expand)
   capsule(ctx, thumbMcp, lerpPt(idx, palmCenter, 0.45), baseR * 0.92 + expand, baseR * 1.0 + expand)
+}
+
+function drawSnap(ctx: CanvasRenderingContext2D, t: NonNullable<RenderedHand['snap']>, pinched: boolean) {
+  ctx.save()
+  const pad = 3
+  const w = t.right - t.left + pad * 2
+  const h = t.bottom - t.top + pad * 2
+  ctx.beginPath()
+  ctx.roundRect(t.left - pad, t.top - pad, w, h, Math.min(8, w / 2, h / 2))
+  ctx.strokeStyle = pinched ? '#ff5a1f' : 'rgb(255 90 31 / 0.55)'
+  ctx.lineWidth = pinched ? 2 : 1.4
+  ctx.stroke()
+  ctx.restore()
 }
 
 function drawReticle(ctx: CanvasRenderingContext2D, cursor: Pt, pinched: boolean, strength: number) {
@@ -590,6 +605,9 @@ export function renderHands(ctx: CanvasRenderingContext2D, hands: RenderedHand[]
     else if (style === 'simpson') drawSimpsonHand(ctx, hand)
     else drawGoblinHand(ctx, hand)
   }
-  for (const hand of hands) drawReticle(ctx, hand.cursor, hand.pinched, hand.pinchStrength)
+  for (const hand of hands) {
+    if (hand.snap) drawSnap(ctx, hand.snap, hand.pinched)
+    drawReticle(ctx, hand.cursor, hand.pinched, hand.pinchStrength)
+  }
   return style !== 'wireframe' && !drawn
 }
