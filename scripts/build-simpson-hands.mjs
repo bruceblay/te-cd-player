@@ -57,7 +57,9 @@ for (const side of ['left', 'right']) {
     const x = Math.abs(local.dot(across)) / width
     const z = Math.abs(local.dot(depth)) / .018
     // Rounded rectangle in the palm plane, elliptical through its thickness.
-    const outline = Math.pow(x ** 3 + Math.abs(y / .058) ** 3, 1/3)
+    // The top edge sits below the knuckles so the webbing starts low and the
+    // three fingers read as fingers, not a row of thumbs.
+    const outline = Math.pow(x ** 3 + Math.abs(y / (y > 0 ? .042 : .058)) ** 3, 1/3)
     return (Math.pow(outline ** 3 + z ** 3, 1/3) - 1) * .026
   }
 
