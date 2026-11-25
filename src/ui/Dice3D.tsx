@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { createResinDiceMaterial } from '../scene3d/materials'
 
 export type DieKind = 'd6' | 'd20'
 
@@ -38,31 +39,9 @@ const D6_FACE_BASIS: Record<number, { n: THREE.Vector3; u: THREE.Vector3; v: THR
 function buildD6(): { group: THREE.Group; faceQuats: Map<number, THREE.Quaternion>; textures: THREE.Texture[] } {
   const group = new THREE.Group()
 
-  // Subtle deeper inner ruby core for authentic translucent resin depth
-  const coreGeo = new RoundedBoxGeometry(0.82, 0.82, 0.82, 3, 0.12)
-  const coreMat = new THREE.MeshStandardMaterial({
-    color: '#4e0206',
-    roughness: 0.45,
-    metalness: 0.05,
-  })
-  group.add(new THREE.Mesh(coreGeo, coreMat))
-
-  // Glossy translucent ruby-red acrylic shell
+  // Translucent ruby resin all the way through (an opaque core showed through the shell)
   const shellGeo = new RoundedBoxGeometry(1, 1, 1, 5, 0.145)
-  const shellMat = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#b40710'),
-    emissive: new THREE.Color('#300004'),
-    emissiveIntensity: 0.5,
-    roughness: 0.09,
-    metalness: 0.02,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.04,
-    reflectivity: 1.0,
-    ior: 1.5,
-    transparent: true,
-    opacity: 0.88,
-    envMapIntensity: 1.45,
-  })
+  const shellMat = createResinDiceMaterial(1)
   group.add(new THREE.Mesh(shellGeo, shellMat))
 
   // Recessed-look ivory white pips on all 6 faces
@@ -291,31 +270,8 @@ function buildD20(): { group: THREE.Group; faceQuats: Map<number, THREE.Quaterni
   refGeo.dispose()
 
   const geo = makeBeveledIcosahedron(radius, 0.075)
-  const coreGeo = new THREE.IcosahedronGeometry(radius * 0.76, 0)
 
-  // Deep ruby core inside the crisp beveled resin icosahedron
-  const coreMat = new THREE.MeshStandardMaterial({
-    color: '#460207',
-    roughness: 0.45,
-    metalness: 0.05,
-  })
-  group.add(new THREE.Mesh(coreGeo, coreMat))
-
-  // Glossy crisp translucent crimson resin shell with tight rounded bevels
-  const shellMat = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#9c0612'),
-    emissive: new THREE.Color('#2a0005'),
-    emissiveIntensity: 0.5,
-    roughness: 0.09,
-    metalness: 0.03,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.04,
-    reflectivity: 1.0,
-    ior: 1.52,
-    transparent: true,
-    opacity: 0.88,
-    envMapIntensity: 1.5,
-  })
+  const shellMat = createResinDiceMaterial(radius * 1.6, 0.62)
   group.add(new THREE.Mesh(geo, shellMat))
 
   // Map 20 faces -> numbers 1..20 with exact engraved decals & face-up quaternions

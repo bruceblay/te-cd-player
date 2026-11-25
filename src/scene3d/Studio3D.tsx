@@ -268,6 +268,8 @@ export function Studio3D({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.02
+    // the resin dice redraw what's behind them; half resolution halves that pass's cost and looks the same
+    renderer.transmissionResolutionScale = 0.5
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.domElement.style.display = 'block'
     renderer.domElement.style.width = '100%'

@@ -466,3 +466,24 @@ export function createWoodTablePbrMaps(url: string): {
     },
   }
 }
+
+/**
+ * Cast resin for the dice: light passes through and the red deepens with the
+ * distance it travels, so thin edges glow and the middle reads dark, with no
+ * separate core mesh. `thickness` is the die's size in its own units; `clarity`
+ * below 1 clouds the resin, for a faceted die that would otherwise look like panes.
+ */
+export function createResinDiceMaterial(thickness: number, clarity = 1): THREE.MeshPhysicalMaterial {
+  return new THREE.MeshPhysicalMaterial({
+    color: '#ff2b38',
+    transmission: clarity,
+    thickness,
+    attenuationColor: new THREE.Color('#e4101f'),
+    attenuationDistance: thickness * 0.8,
+    roughness: 0.14,
+    metalness: 0,
+    ior: 1.5,
+    specularIntensity: 0.8,
+    envMapIntensity: 0.85,
+  })
+}

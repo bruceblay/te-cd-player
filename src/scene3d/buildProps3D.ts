@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import coasterTopUrl from '../assets/props/coaster-top.jpg'
 import type { PropId } from '../ui/DeskProps'
+import { createResinDiceMaterial } from './materials'
 
 /** World-unit thickness of the rustic ceramic tile coaster (8.4 mm). */
 export const COASTER_H = 0.84
@@ -378,31 +379,10 @@ function buildD6Mesh(t: ReturnType<typeof createTracker>): {
   const S = 1.6 // 16 mm casino die
   const dieGroup = new THREE.Group()
 
-  // Deeper inner ruby core for authentic translucent resin depth
-  const core = new THREE.Mesh(
-    t.geo(new RoundedBoxGeometry(S * 0.82, S * 0.82, S * 0.82, 3, S * 0.12)),
-    t.mat(new THREE.MeshStandardMaterial({ color: '#4c0206', roughness: 0.45, metalness: 0.05 })),
-  )
-  dieGroup.add(core)
-
-  // Glossy translucent ruby-red acrylic shell
+  // Translucent ruby resin all the way through (an opaque core showed through the shell)
   const shell = new THREE.Mesh(
     t.geo(new RoundedBoxGeometry(S, S, S, 5, S * 0.145)),
-    t.mat(
-      new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color('#b60812'),
-        emissive: new THREE.Color('#2d0004'),
-        emissiveIntensity: 0.45,
-        roughness: 0.09,
-        metalness: 0.02,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.04,
-        ior: 1.5,
-        transparent: true,
-        opacity: 0.88,
-        envMapIntensity: 1.35,
-      }),
-    ),
+    t.mat(createResinDiceMaterial(S)),
   )
   dieGroup.add(shell)
 
@@ -674,32 +654,8 @@ function buildD20Mesh(t: ReturnType<typeof createTracker>): {
   refGeo.dispose()
 
   const beveledGeo = t.geo(makeBeveledIcosahedronGeometry(radius, 0.075))
-  const coreGeo = t.geo(new THREE.IcosahedronGeometry(radius * 0.76, 0))
 
-  const core = new THREE.Mesh(
-    coreGeo,
-    t.mat(new THREE.MeshStandardMaterial({ color: '#460207', roughness: 0.45, metalness: 0.05 })),
-  )
-  dieGroup.add(core)
-
-  const shell = new THREE.Mesh(
-    beveledGeo,
-    t.mat(
-      new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color('#9c0612'),
-        emissive: new THREE.Color('#2a0005'),
-        emissiveIntensity: 0.45,
-        roughness: 0.09,
-        metalness: 0.03,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.04,
-        ior: 1.52,
-        transparent: true,
-        opacity: 0.88,
-        envMapIntensity: 1.45,
-      }),
-    ),
-  )
+  const shell = new THREE.Mesh(beveledGeo, t.mat(createResinDiceMaterial(radius * 1.6, 0.62)))
   dieGroup.add(shell)
 
   const faceQuats = new Map<number, THREE.Quaternion>()
@@ -1339,23 +1295,6 @@ function makeCandleLabelTexture(): THREE.CanvasTexture {
   return tex
 }
 
-function makeGlowSpriteTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas')
-  c.width = 128
-  c.height = 128
-  const ctx = c.getContext('2d')!
-  const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 62)
-  g.addColorStop(0, 'rgba(255, 240, 190, 0.9)')
-  g.addColorStop(0.32, 'rgba(255, 165, 58, 0.45)')
-  g.addColorStop(0.7, 'rgba(255, 110, 24, 0.12)')
-  g.addColorStop(1, 'rgba(255, 90, 10, 0)')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, 128, 128)
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = THREE.SRGBColorSpace
-  return tex
-}
-
 function buildCandle(t: ReturnType<typeof createTracker>): {
   group: THREE.Group
   update: (dt: number) => void
@@ -1375,56 +1314,38 @@ function buildCandle(t: ReturnType<typeof createTracker>): {
       metalness: 0.0,
     }),
   )
-  const wax = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(R - 0.18, R - 0.24, H - 1.35, 32)), waxMat)
-  wax.position.y = (H - 1.35) * 0.5 + 0.34
+  function turned(points: number[][]) {
+    return t.geo(new THREE.LatheGeometry(points.map(([r,y]) => new THREE.Vector2(r,y)), 64))
+  }
+  const waxY = H - 1
+  // The solid wax surface drops into the melt pool. Their edges meet at one ring.
+  const wax = new THREE.Mesh(turned([[R-.19,waxY-.32],[R-.19,waxY+.04],
+    [R-.29,waxY+.08],[1.65,waxY+.025],[1.25,waxY-.06]]), waxMat)
   g.add(wax)
+  const poolMat = t.mat(new THREE.MeshPhysicalMaterial({
+    color: 0xd8ae76, emissive: 0x5c2b06, emissiveIntensity: .28,
+    roughness: .19, clearcoat: .7,
+  }))
+  g.add(new THREE.Mesh(turned([[1.25,waxY-.06],[.86,waxY-.13],[0,waxY-.15]]),poolMat))
 
-  // Melted glossy concave wax pool right around the wick
-  const poolMat = t.mat(
-    new THREE.MeshPhysicalMaterial({
-      color: 0xf4e3c0,
-      emissive: 0x5c2b06,
-      emissiveIntensity: 0.65,
-      roughness: 0.14,
-      clearcoat: 0.9,
-      transparent: true,
-      opacity: 0.9,
-    }),
-  )
-  const pool = new THREE.Mesh(t.geo(new THREE.CircleGeometry(R - 0.2, 32)).rotateX(-Math.PI / 2), poolMat)
-  pool.position.y = H - 0.98
-  g.add(pool)
-
-  // Translucent amber apothecary glass jar (base + cylinder + rounded lip)
-  const glassMat = t.mat(
-    new THREE.MeshPhysicalMaterial({
-      color: 0xb95f18,
-      roughness: 0.08,
-      metalness: 0.04,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.05,
-      ior: 1.52,
-      transparent: true,
-      opacity: 0.56,
-      envMapIntensity: 1.35,
-      depthWrite: false,
-    }),
-  )
-  const jarBase = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(R - 0.05, R - 0.12, 0.36, 36)), glassMat)
-  jarBase.position.y = 0.18
-  g.add(jarBase)
-
-  const jarWall = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(R, R - 0.08, H, 36, 1, true)), glassMat)
-  jarWall.position.y = H * 0.5
-  g.add(jarWall)
-
-  const jarLip = new THREE.Mesh(t.geo(new THREE.TorusGeometry(R - 0.04, 0.11, 12, 36)).rotateX(Math.PI / 2), glassMat)
-  jarLip.position.y = H - 0.04
-  g.add(jarLip)
+  // Dense amber below the fill line occludes the wick and the flame from below.
+  const bodyMat = t.mat(new THREE.MeshPhysicalMaterial({
+    color: 0x754020, roughness: .22, clearcoat: .95, clearcoatRoughness: .11,
+  }))
+  const collarMat = t.mat(new THREE.MeshPhysicalMaterial({
+    color: 0xab6531, roughness: .17, clearcoat: 1, transparent: true,
+    opacity: .62, depthWrite: false,
+  }))
+  const jarBody = new THREE.Mesh(turned([[0,0],[R-.23,0],[R-.10,.07],
+    [R,.28],[R,waxY],[R-.16,waxY],[R-.16,.34],[0,.34]]),bodyMat)
+  const collar = new THREE.Mesh(turned([[R,waxY],[R,H-.16],[R-.025,H-.055],
+    [R-.10,H],[R-.18,H-.04],[R-.20,H-.13],[R-.16,waxY]]),collarMat)
+  collar.renderOrder = 2
+  g.add(jarBody, collar)
 
   // Wrap-around cream apothecary label on front arc of the jar
   const labelTex = t.tex(makeCandleLabelTexture())
-  const labelGeo = t.geo(new THREE.CylinderGeometry(R + 0.025, R - 0.02, 2.55, 28, 1, true, -0.95, 1.9))
+  const labelGeo = t.geo(new THREE.CylinderGeometry(R + 0.035, R + 0.035, 2.55, 28, 1, true, -0.95, 1.9))
   const label = new THREE.Mesh(
     labelGeo,
     t.mat(new THREE.MeshStandardMaterial({ map: labelTex, roughness: 0.84, metalness: 0.0 })),
@@ -1437,53 +1358,33 @@ function buildCandle(t: ReturnType<typeof createTracker>): {
     t.geo(new THREE.CylinderGeometry(0.055, 0.075, 0.72, 8)),
     t.mat(new THREE.MeshStandardMaterial({ color: 0x1c1816, roughness: 0.95 })),
   )
-  wick.position.set(0.04, H - 0.72, 0)
+  wick.position.set(0.04, H - 0.83, 0)
   wick.rotation.z = -0.14
   g.add(wick)
 
-  // Live flickering teardrop 3D flame + soft halo sprite + real warm PointLight
+  // Flickering flame and local warm light
   const flameGroup = new THREE.Group()
-  flameGroup.position.set(0.08, H - 0.42, 0)
+  flameGroup.position.set(0.08, H - 0.53, 0)
   g.add(flameGroup)
 
-  const outerFlameGeo = t.geo(new THREE.SphereGeometry(0.32, 16, 16))
-  outerFlameGeo.scale(0.68, 2.25, 0.68)
-  outerFlameGeo.translate(0, 0.52, 0)
-  const outerFlameMat = t.mat(
-    new THREE.MeshBasicMaterial({
-      color: 0xff9a28,
-      transparent: true,
-      opacity: 0.88,
-      depthWrite: false,
-    }),
+  const flame = new THREE.Mesh(
+    turned([[0,0],[.11,.08],[.19,.29],[.17,.53],[.11,.76],[.055,.99],[0,1.27]]),
+    t.mat(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })),
   )
-  const outerFlame = new THREE.Mesh(outerFlameGeo, outerFlameMat)
-  flameGroup.add(outerFlame)
+  const pos = flame.geometry.getAttribute('position')
+  const colors = []
+  const amber = new THREE.Color(0xffa331), ivory = new THREE.Color(0xfff2be)
+  const shade = new THREE.Color()
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i)
+    pos.setX(i, pos.getX(i) + .10*y*y)
+    shade.copy(ivory).lerp(amber, Math.min(1, y*.9))
+    colors.push(shade.r, shade.g, shade.b)
+  }
+  flame.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors,3))
+  flameGroup.add(flame)
 
-  const innerFlameGeo = t.geo(new THREE.SphereGeometry(0.18, 12, 12))
-  innerFlameGeo.scale(0.65, 1.9, 0.65)
-  innerFlameGeo.translate(0, 0.36, 0)
-  const innerFlame = new THREE.Mesh(
-    innerFlameGeo,
-    t.mat(new THREE.MeshBasicMaterial({ color: 0xfff7d6 })),
-  )
-  flameGroup.add(innerFlame)
-
-  const halo = new THREE.Sprite(
-    t.mat(
-      new THREE.SpriteMaterial({
-        map: t.tex(makeGlowSpriteTexture()),
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    ),
-  )
-  halo.position.y = 0.55
-  halo.scale.set(3.2, 3.2, 1)
-  flameGroup.add(halo)
-
-  const light = new THREE.PointLight(0xffa038, 22, 34, 1.8)
+  const light = new THREE.PointLight(0xffa038, 6, 19, 2)
   light.position.set(0, H + 0.6, 0)
   g.add(light)
 
@@ -1495,9 +1396,9 @@ function buildCandle(t: ReturnType<typeof createTracker>): {
     toggle() {
       lit = !lit
       flameGroup.visible = lit
-      light.intensity = lit ? 22 : 0
+      light.intensity = lit ? 6 : 0
       waxMat.emissiveIntensity = lit ? 0.42 : 0
-      poolMat.emissiveIntensity = lit ? 0.65 : 0
+      poolMat.emissiveIntensity = lit ? 0.28 : 0
     },
     update(dt: number) {
       if (!lit) return
@@ -1509,8 +1410,7 @@ function buildCandle(t: ReturnType<typeof createTracker>): {
       const sy = 0.94 + f1 * 0.11
       const sx = 1.0 - f1 * 0.05
       flameGroup.scale.set(sx, sy, sx)
-      light.intensity = 20 + f1 * 4.2
-      halo.scale.set(3.0 + f1 * 0.35, 3.0 + f1 * 0.35, 1)
+      light.intensity = 6 + f1 * 1.1
     },
   }
 }
@@ -1724,18 +1624,18 @@ function buildTeaMug(t: ReturnType<typeof createTracker>): {
 
   // 3. Signature solid flat rectangular ceramic tab/fin handle (matte speckled glaze)
   const tabHandle = new THREE.Mesh(
-    t.geo(new RoundedBoxGeometry(2.9, 3.45, 0.92, 4, 0.22)),
+    t.geo(new RoundedBoxGeometry(2.48, 3.45, 0.92, 4, 0.22)),
     glazeMat,
   )
-  tabHandle.position.set(5.45, 4.68, 0)
+  tabHandle.position.set(5.66, 4.68, 0)
   g.add(tabHandle)
 
   // Subtle hand-slipped ceramic join fillet where the flat tab meets the cylinder wall
   const tabFillet = new THREE.Mesh(
-    t.geo(new RoundedBoxGeometry(0.68, 3.64, 1.18, 3, 0.24)),
+    t.geo(new RoundedBoxGeometry(0.48, 3.64, 1.18, 3, 0.24)),
     glazeMat,
   )
-  tabFillet.position.set(4.46, 4.68, 0)
+  tabFillet.position.set(4.63, 4.68, 0)
   g.add(tabFillet)
 
   // 4. Steeped rich amber-honey tea surface inside the wide squat mug (fully opaque so nothing beneath ever bleeds through!)

@@ -1,0 +1,6 @@
+<style>*{margin:0}canvas{display:block}</style><script type=module>
+import * as T from 'three';import {buildStudioRoom} from './src/scene3d/buildStudioRoom'
+const r=new T.WebGLRenderer({antialias:true});r.setSize(innerWidth,innerHeight);r.toneMapping=T.ACESFilmicToneMapping;document.body.append(r.domElement)
+const s=new T.Scene();s.add(buildStudioRoom().group,new T.HemisphereLight(0xfff5e6,0x999084,1.4));const l=new T.DirectionalLight(0xfff2df,2);l.position.set(30,100,45);s.add(l)
+const c=new T.PerspectiveCamera(61,innerWidth/innerHeight,.25,650);c.position.set(36,31,113);c.lookAt(-38,34,-55);r.setAnimationLoop(()=>r.render(s,c))
+</script>
