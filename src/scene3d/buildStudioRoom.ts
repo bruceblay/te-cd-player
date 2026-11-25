@@ -470,29 +470,6 @@ export function buildStudioRoom(): StudioRoomRig {
   sill.position.set(winCX, y0 - 1, BACK_Z + 3.0)
   group.add(sill)
 
-  // 4. Vertical Walnut Acoustic Slat Wall Panel (right behind the center of the desk!)
-  const slatPanelW = 34
-  const slatPanelH = 88
-  const slatCX = 8
-  const slatCY = 18
-  const feltBack = new THREE.Mesh(
-    t.geo(new THREE.BoxGeometry(slatPanelW, slatPanelH, 0.7)),
-    t.mat(new THREE.MeshStandardMaterial({ color: 0x22201f, roughness: 0.96 })),
-  )
-  feltBack.position.set(slatCX, slatCY, BACK_Z + 0.35)
-  group.add(feltBack)
-
-  const slatMat = t.mat(new THREE.MeshStandardMaterial({ color: 0x71553d, roughness: 0.74, metalness: 0.02 }))
-  const slatCount = 13
-  const slatW = 1.65
-  const slatPitch = slatPanelW / slatCount
-  const slatGeo = t.geo(new THREE.BoxGeometry(slatW, slatPanelH, 1.25))
-  for (let i = 0; i < slatCount; i++) {
-    const slat = new THREE.Mesh(slatGeo, slatMat)
-    slat.position.set(slatCX - slatPanelW * 0.5 + (i + 0.5) * slatPitch, slatCY, BACK_Z + 1.1)
-    group.add(slat)
-  }
-
   // Framed gig poster and waveform print.
   const addFramedArt = (variant: 'boredoms' | 'wave', x: number, y: number, w: number, h: number, zOff: number) => {
     const fg = new THREE.Group()
@@ -526,7 +503,8 @@ export function buildStudioRoom(): StudioRoomRig {
     fg.add(print)
     group.add(fg)
   }
-  addFramedArt('boredoms', slatCX, 24, 30, 30*57.2/44.5, 2.52)
+  // the gig poster hangs straight on the wall, behind the middle of the desk
+  addFramedArt('boredoms', 8, 24, 30, 30*57.2/44.5, 1.0)
   addFramedArt('wave', 68, 111, 17, 21.5, 1.0)
 
   // 6. Handbuilt OSB bookcase and cassette rack on Back-Right Wall
