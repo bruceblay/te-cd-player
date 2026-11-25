@@ -2,6 +2,7 @@ import { buildBookshelf } from './buildBookshelf'
 import * as THREE from 'three'
 import boredomsPrint from '../assets/room/seripop-boredoms-2005.jpg'
 import gardenPhoto from '../assets/room/garden-photo.jpg'
+import { uvPaintMaterial, uvPaintTexture, type UvSurface } from './uvPaint'
 import mineralPlaster from '../assets/room/mineral-plaster.webp'
 import acousticOak from '../assets/room/acoustic-oak.webp'
 import forestCollage from '../assets/room/forest-collage.webp'
@@ -12,6 +13,10 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 
 export interface StudioRoomRig {
   group: THREE.Group
+  /** the light switch by the door: clicking it toggles the black light */
+  lightSwitch: THREE.Object3D
+  /** 0 = room lights, 1 = black light (UV paint glowing); `on` is the switch position */
+  setBlacklight: (level: number, on: boolean) => void
   dispose: () => void
 }
 
@@ -577,8 +582,88 @@ export function buildStudioRoom(): StudioRoomRig {
   windowGlow.position.set(winCX + 4, 24, BACK_Z + 18)
   group.add(windowGlow)
 
+  // ---- Light switch and black light ----------------------------------------------------
+  // A rocker plate by the latch side of the door, low enough to see when the camera turns round.
+  const lightSwitch = new THREE.Group()
+  lightSwitch.name = 'light-switch'
+  const plateMat = t.mat(new THREE.MeshStandardMaterial({ color: 0xf1ede4, roughness: 0.45, emissive: 0x6b3cff, emissiveIntensity: 0 }))
+  const plate = new THREE.Mesh(t.geo(new RoundedBoxGeometry(7.2, 11.6, 0.6, 3, 0.35)), plateMat)
+  plate.castShadow = true
+  const rocker = new THREE.Mesh(t.geo(new RoundedBoxGeometry(2.4, 4.4, 1.3, 3, 0.4)), plateMat)
+  rocker.position.z = 0.6
+  lightSwitch.add(plate, rocker)
+  for (const sy of [-1, 1]) {
+    const screw = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(0.28, 0.28, 0.2, 12)), t.mat(new THREE.MeshStandardMaterial({ color: 0xbfb9ad, metalness: 0.6, roughness: 0.4 })))
+    screw.rotation.x = Math.PI / 2
+    screw.position.set(0, sy * 4.4, 0.35)
+    lightSwitch.add(screw)
+  }
+  lightSwitch.traverse((o) => (o.userData.lightSwitch = true))
+  lightSwitch.rotation.y = Math.PI
+  // 64 cm off the floor: the middle of the strip of wall a turned-round camera sees over the table
+  lightSwitch.position.set(-62, -6, FRONT_Z - 0.35)
+  group.add(lightSwitch)
+
+  // UV paint on every surface, gapped round the window, door and collage
+  const paintLayers: THREE.MeshBasicMaterial[] = []
+  const paint = (surface: UvSurface, w: number, h: number, holes: { x: number; y: number; w: number; h: number }[], place: (m: THREE.Mesh) => void) => {
+    const mat = t.mat(uvPaintMaterial(t.tex(uvPaintTexture(surface, w, h, holes))))
+    paintLayers.push(mat)
+    const m = new THREE.Mesh(t.geo(new THREE.PlaneGeometry(w, h)), mat)
+    m.renderOrder = 2
+    m.visible = false
+    place(m)
+    group.add(m)
+  }
+  const midY = (FLOOR_Y + CEIL_Y) / 2
+  const midZ = (BACK_Z + FRONT_Z) / 2
+  paint('back', ROOM_W, WALL_H, [{ x: winCX - winW / 2 + SIDE_X - 4, y: CEIL_Y - winCY - winH / 2 - 4, w: winW + 8, h: winH + 8 }], (m) =>
+    m.position.set(0, midY, BACK_Z + 0.25))
+  paint('front', ROOM_W, WALL_H, [{ x: SIDE_X - 50, y: CEIL_Y - (FLOOR_Y + 212), w: 100, h: 212 }], (m) => {
+    m.rotation.y = Math.PI
+    m.position.set(0, midY, FRONT_Z - 0.25)
+  })
+  paint('left', ROOM_D, WALL_H, [], (m) => {
+    m.rotation.y = Math.PI / 2
+    m.position.set(-SIDE_X + 0.35 + panelDepth + 0.15, midY, midZ)
+  })
+  paint('right', ROOM_D, WALL_H, [{ x: 40 - 3, y: CEIL_Y - 89.5 - 3, w: 66, h: 96 }], (m) => {
+    m.rotation.y = -Math.PI / 2
+    m.position.set(SIDE_X - 0.3, midY, midZ)
+  })
+  paint('ceiling', ROOM_W, ROOM_D, [], (m) => {
+    m.rotation.x = Math.PI / 2
+    m.position.set(0, CEIL_Y - 0.3, midZ)
+  })
+
+  // the black light itself: a violet tube on the ceiling and the glow it throws
+  const tubeMat = t.mat(new THREE.MeshStandardMaterial({ color: 0x2a2440, emissive: 0x7a3cff, emissiveIntensity: 0, roughness: 0.3 }))
+  const tube = new THREE.Mesh(t.geo(new THREE.CapsuleGeometry(1.6, 110, 6, 16)), tubeMat)
+  tube.rotation.z = Math.PI / 2
+  tube.position.set(0, CEIL_Y - 6, 20)
+  group.add(tube)
+  const uvLight = new THREE.PointLight(0x7a3cff, 0, 420, 1.1)
+  uvLight.position.set(0, CEIL_Y - 14, 20)
+  group.add(uvLight)
+  const daylight = windowGlow.intensity
+
+  const setBlacklight = (level: number, on: boolean) => {
+    for (const m of paintLayers) m.opacity = level
+    for (const m of group.children) if ((m as THREE.Mesh).material && paintLayers.includes((m as THREE.Mesh).material as THREE.MeshBasicMaterial)) m.visible = level > 0.01
+    tubeMat.emissiveIntensity = level * 3.2
+    plateMat.emissiveIntensity = level * 0.35
+    uvLight.intensity = level * 900
+    windowGlow.intensity = daylight * (1 - 0.92 * level)
+    // the view outside darkens too, as if it were night
+    ;(skyPane.material as THREE.MeshBasicMaterial).color.setScalar(1 - 0.8 * level)
+    rocker.rotation.x = on ? -0.22 : 0.22
+  }
+  setBlacklight(0, false)
+
   return {
     group,
+    lightSwitch,
+    setBlacklight,
     dispose() {
       t.dispose()
     },

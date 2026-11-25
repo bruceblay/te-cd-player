@@ -420,7 +420,50 @@ export function Studio3D({
       keyLight.color.setHex(isWood ? 0xfff4e2 : 0xfffaf0)
       keyLight.intensity = isWood ? 1.65 : 1.55
       fillLight.intensity = isWood ? 0.46 : 0.42
+      lightBase = { hemi: hemi.intensity, key: keyLight.intensity, fill: fillLight.intensity, env: scene.environmentIntensity, fog: bgHex }
+      // the black light belongs to the room: leaving it turns it off
+      if (!isWood) blacklightOn = false
       if (controlsReady) applyDepth()
+    }
+    // Black light: the room switch dims everything to a violet glow and lights the UV paint.
+    // `blacklight` eases 0..1; switching on starts with a fluorescent-tube flicker.
+    let lightBase = { hemi: 0, key: 0, fill: 0, env: 0, fog: 0 }
+    let blacklightOn = false
+    let blacklight = 0
+    let flickerFrom = 0
+    const fogDark = new THREE.Color(0x0d0718)
+    const fogMix = new THREE.Color()
+    const applyBlacklight = (dt: number, now: number) => {
+      const target = blacklightOn ? 1 : 0
+      if (target === 0 && blacklight === 0) return
+      blacklight += (target - blacklight) * Math.min(1, dt * (blacklightOn ? 2.4 : 4))
+      if (Math.abs(target - blacklight) < 0.002) blacklight = target
+      // while the tube strikes, the room lights stutter between on and off
+      const striking = blacklightOn && now - flickerFrom < 650
+      const level = striking ? (Math.random() < 0.5 ? 0.15 : 0.85) * Math.min(1, (now - flickerFrom) / 200) : blacklight
+      const room = 1 - 0.9 * level
+      hemi.intensity = lightBase.hemi * room
+      keyLight.intensity = lightBase.key * room
+      fillLight.intensity = lightBase.fill * room
+      scene.environmentIntensity = lightBase.env * (1 - 0.8 * level)
+      fogMix.setHex(lightBase.fog).lerp(fogDark, level)
+      ;(scene.background as THREE.Color).copy(fogMix)
+      ;(scene.fog as THREE.Fog).color.copy(fogMix)
+      studioRoom.setBlacklight(level, blacklightOn)
+    }
+    const toggleBlacklight = () => {
+      blacklightOn = !blacklightOn
+      flickerFrom = performance.now()
+      studioRoom.setBlacklight(blacklight, blacklightOn)
+      track('light_switch', { on: blacklightOn })
+    }
+    const hitLightSwitch = (clientX: number, clientY: number) => {
+      if (!studioRoom.group.visible) return false
+      const rect = renderer.domElement.getBoundingClientRect()
+      ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1
+      ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1
+      raycaster.setFromCamera(ndc, camera)
+      return raycaster.intersectObject(studioRoom.lightSwitch, true).length > 0
     }
     applySurface(propsRef.current.surface)
 
@@ -1075,13 +1118,14 @@ export function Studio3D({
       if (bc1Rigs[1].group.visible) roots.push(bc1Rigs[1].group)
       if (sidekickRig && sidekickRig.group.visible) roots.push(sidekickRig.group)
       if (propsRef.current.propsOn && propsGroup.visible) roots.push(propsGroup)
+      if (studioRoom.group.visible) roots.push(studioRoom.lightSwitch)
       const out: HandTarget[] = []
       camera.updateMatrixWorld()
       for (const root of roots) {
         root.traverseVisible((obj) => {
-          const tag = obj.userData?.control ?? obj.userData?.propId
+          const tag = obj.userData?.control ?? obj.userData?.propId ?? obj.userData?.lightSwitch
           // only the outermost object carrying a tag: its children share it
-          if (!tag || (obj.parent && (obj.parent.userData?.control ?? obj.parent.userData?.propId) === tag)) return
+          if (!tag || (obj.parent && (obj.parent.userData?.control ?? obj.parent.userData?.propId ?? obj.parent.userData?.lightSwitch) === tag)) return
           snapBox.setFromObject(obj)
           if (snapBox.isEmpty()) return
           let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
@@ -1139,6 +1183,12 @@ export function Studio3D({
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 && e.button !== 2) return
       const picked = pickScene(e.clientX, e.clientY)
+      if (!picked && e.button === 0 && hitLightSwitch(e.clientX, e.clientY)) {
+        toggleBlacklight()
+        e.stopPropagation()
+        e.preventDefault()
+        return
+      }
       if (!picked) {
         // Prevent hand-tracking pinches from accidentally orbiting or panning the 3D camera
         if (isHandPointer(e)) {
@@ -1607,6 +1657,7 @@ export function Studio3D({
 
       const { decks: curDecks, mixer: curMixer, deckCount: dc, mixerOn: mOn, surface: curSurface } = propsRef.current
       applySurface(curSurface)
+      applyBlacklight(dt, now)
 
       const lp = layoutPositions(dc, mOn)
       const posLerp = Math.min(1, dt * 10)
