@@ -174,7 +174,7 @@ function makeBeveledIcosahedron(radius: number, inset = 0.075): THREE.BufferGeom
 
   const bulgeFactor = Math.tan(Math.acos(0.745356) * 0.25)
   const visited = new Set<string>()
-  const SEGS = 3
+  const SEGS = 4
   for (const [key, e1] of edgeMap) {
     const [aStr, bStr] = key.split('_')
     const rev = `${bStr}_${aStr}`
@@ -269,7 +269,7 @@ function buildD20(): { group: THREE.Group; faceQuats: Map<number, THREE.Quaterni
   }
   refGeo.dispose()
 
-  const geo = makeBeveledIcosahedron(radius, 0.075)
+  const geo = makeBeveledIcosahedron(radius, 0.1)
 
   const shellMat = createResinDiceMaterial(radius * 1.6, 0.62)
   group.add(new THREE.Mesh(geo, shellMat))

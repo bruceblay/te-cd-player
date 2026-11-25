@@ -539,7 +539,7 @@ function makeBeveledIcosahedronGeometry(radius: number, inset = 0.075): THREE.Bu
   const halfAngle = Math.acos(faces[0].normal.dot(faces[1].normal) > 0.5 ? faces[0].normal.dot(faces[1].normal) : 0.745356) * 0.5
   const bulgeFactor = Math.tan(halfAngle * 0.5)
   const visitedEdges = new Set<string>()
-  const BEVEL_SEGS = 3
+  const BEVEL_SEGS = 4
 
   for (const [key, e1] of edgeMap) {
     const [aStr, bStr] = key.split('_')
@@ -653,7 +653,7 @@ function buildD20Mesh(t: ReturnType<typeof createTracker>): {
   }
   refGeo.dispose()
 
-  const beveledGeo = t.geo(makeBeveledIcosahedronGeometry(radius, 0.075))
+  const beveledGeo = t.geo(makeBeveledIcosahedronGeometry(radius, 0.1))
 
   const shell = new THREE.Mesh(beveledGeo, t.mat(createResinDiceMaterial(radius * 1.6, 0.62)))
   dieGroup.add(shell)
