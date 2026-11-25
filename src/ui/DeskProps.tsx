@@ -678,6 +678,11 @@ export function DeskProps({
     let last = 0
     let dirty = false
 
+    // nothing spins: no item is riding a disc, so their hover buttons come back
+    const stopRiding = () => {
+      for (const prop of liveRef.current) wrapRefs.current[prop.id]?.classList.remove('riding')
+    }
+
     const flush = () => {
       if (!dirty) return
       dirty = false
@@ -708,6 +713,7 @@ export function DeskProps({
       })
 
       if (!spinners.length) {
+        stopRiding()
         last = 0
         flush()
         return
@@ -722,6 +728,11 @@ export function DeskProps({
           if (drag.current?.id === prop.id || rotateRef.current?.id === prop.id) continue
           const px = (prop.x / 100) * vw
           const py = (prop.y / 100) * vh
+          // items riding a spinning disc hide their hover buttons (see .desk-prop.riding)
+          wrapRefs.current[prop.id]?.classList.toggle(
+            'riding',
+            spinners.some((sp) => Math.hypot(px - sp.cx, py - sp.cy) <= sp.r * 0.96),
+          )
           for (const sp of spinners) {
             const dx = px - sp.cx
             const dy = py - sp.cy
@@ -770,6 +781,7 @@ export function DeskProps({
           cancelAnimationFrame(raf)
           raf = 0
         }
+        stopRiding()
         last = 0
         flush()
       }

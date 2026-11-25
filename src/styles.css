@@ -1927,7 +1927,8 @@ button {
   opacity: 1;
   transform: scale(1);
 }
-.desk-prop.grabbing .desk-prop-btn {
+.desk-prop.grabbing .desk-prop-btn,
+.desk-prop.riding .desk-prop-btn {
   opacity: 0;
   pointer-events: none;
 }
