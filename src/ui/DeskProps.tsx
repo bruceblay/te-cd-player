@@ -51,6 +51,8 @@ const COASTER_SEEDED_KEY = 'bc1.coasterSeeded'
 const DEFAULT_IDS: PropId[] = ['succulent', 'coaster', 'tea', 'die', 'pencil', 'keycap']
 
 const isDie = (id: PropId) => id === 'die' || id === 'd20'
+/** items that only spawn above the gear: the candle, and the mug and coaster, which are big enough to block the controls */
+const TOP_ONLY = new Set<PropId>(['candle', 'coaster', 'tea'])
 
 const rollFace = (id: PropId, avoid?: number): number | undefined => {
   const max = id === 'die' ? 6 : id === 'd20' ? 20 : 0
@@ -186,23 +188,27 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
   const ppm = measurePxPerMm()
   const sizePx = def.mm * ppm
   const gear = gearBounds()
-  const halfW = sizePx * 0.5
-  const halfH = Math.max(12, sizePx * def.aspect * 0.5)
-  const rad = Math.min(sizePx * 0.5, Math.hypot(halfW, halfH))
+  // the coaster leaves room for the mug that sits on it, which is a little wider
+  const mug = id === 'coaster' ? PROP_MAP.get('tea')! : null
+  const halfW = Math.max(sizePx * 0.5, mug ? mug.mm * ppm * 0.5 : 0)
+  const halfH = Math.max(12, sizePx * def.aspect * 0.5, mug ? mug.mm * ppm * mug.aspect * 0.5 : 0)
   // Keep every item fully inside the viewport (small phone screens clip anything tucked against the edge)
   const minEdgeX = Math.min(halfW, halfH) + EDGE
   const minEdgeY = Math.min(halfW, halfH) + EDGE
   const face = near ? near.face : rollFace(id)
 
-  const overlapsExisting = (px: number, py: number) =>
-    existing.some((p) => {
+  // compare rotated outlines, so a long pencil can't be laid across another item
+  const overlapsExisting = (px: number, py: number, rotDeg: number) => {
+    const me = extents(halfW, halfH, rotDeg)
+    return existing.some((p) => {
       const odef = PROP_MAP.get(p.id)
+      const oSize = odef ? odef.mm * ppm : 40
+      const other = extents(oSize * 0.5, Math.max(12, oSize * (odef?.aspect ?? 1) * 0.5), p.rot)
       const ox = (p.x / 100) * vw
       const oy = (p.y / 100) * vh
-      const oSize = odef ? odef.mm * ppm : 40
-      const minDist = Math.min(oSize * 0.42, 68) + Math.min(rad, 68) + 10
-      return Math.hypot(px - ox, py - oy) < minDist
+      return Math.abs(px - ox) < me.rx + other.rx + 8 && Math.abs(py - oy) < me.ry + other.ry + 8
     })
+  }
 
   const hitsMenu = (px: number, py: number) => px > vw - 76 && py < 72
 
@@ -235,8 +241,8 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
     const rightMin = gear.right + sideHalf + 4
     if (vw - minEdgeX > rightMin) addBand(rightMin, vw - minEdgeX, minEdgeY, vh - minEdgeY, def.aspect < 0.3)
   }
-  // the candle belongs at the top of the desk, above the gear
-  if (id === 'candle' && gear) {
+  // the candle, and the big mug and coaster, belong at the top of the desk, above the gear and out of reach of its controls
+  if (TOP_ONLY.has(id) && gear) {
     const top = bands.filter((b) => b.y1 <= gear.top)
     if (top.length) bands.splice(0, bands.length, ...top)
   }
@@ -300,7 +306,7 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
     }
     const inGear = hitsGear(px, py, rot)
     const inMenu = hitsMenu(px, py)
-    const inProp = overlapsExisting(px, py)
+    const inProp = overlapsExisting(px, py, rot)
     const { rx: erx, ry: ery } = extents(halfW, halfH, rot)
     const offscreen = px - erx < EDGE || px + erx > vw - EDGE || py - ery < EDGE || py + ery > vh - EDGE
     if (!inGear && !inMenu && !inProp && !offscreen && !near) {
@@ -343,6 +349,11 @@ export function clearGearOverlap(props: PlacedProp[]): PlacedProp[] {
   const vh = Math.max(320, window.innerHeight)
   const ppm = measurePxPerMm()
 
+  // a mug sitting on its coaster moves with it, so the pair never splits up
+  const coaster = props.find((p) => p.id === 'coaster')
+  const mug = props.find((p) => p.id === 'tea')
+  const stacked = !!coaster && !!mug && Math.abs(coaster.x - mug.x) < 0.5 && Math.abs(coaster.y - mug.y) < 0.5
+
   const keep: PlacedProp[] = []
   const blocked = new Set<PropId>()
   for (const p of props) {
@@ -350,15 +361,23 @@ export function clearGearOverlap(props: PlacedProp[]): PlacedProp[] {
     else keep.push(p)
   }
   if (!blocked.size) return props
+  if (stacked && (blocked.has('coaster') || blocked.has('tea'))) {
+    blocked.add('coaster')
+    blocked.add('tea')
+  }
 
-  const placed = keep.slice()
+  const placed = keep.filter((p) => !blocked.has(p.id))
   const moved = new Map<PropId, PlacedProp>()
   for (const p of props) {
     if (!blocked.has(p.id)) continue
-    const next = randomSafeSpot(p.id, placed, { x: p.x, y: p.y, rot: p.rot, face: p.face })
+    if (stacked && p.id === 'tea') continue
+    // moving it on screen keeps its spot on the 3D table
+    const next = { ...p, ...randomSafeSpot(p.id, placed, { x: p.x, y: p.y, rot: p.rot, face: p.face }) }
     placed.push(next)
     moved.set(p.id, next)
   }
+  const newCoaster = moved.get('coaster')
+  if (stacked && newCoaster && mug) moved.set('tea', { ...mug, x: newCoaster.x, y: newCoaster.y })
   return props.map((p) => moved.get(p.id) ?? p)
 }
 
@@ -488,7 +507,8 @@ export function randomSafeSpot3D(
   const frameHalfX = Math.min(24.5, rigHW + (deckCount === 1 ? 10 : 0.8))
   const bands: { x0: number; x1: number; z0: number; z1: number; vertical: boolean; weight: number }[] = [
     // Front foreground of table (always super visible in desk, low & top angles!)
-    { x0: -frameHalfX + 4.5, x1: frameHalfX - 4.5, z0: rigHD + ext.halfD + 0.9, z1: rigHD + 10.5 - ext.halfD * 0.4, vertical: false, weight: 5 },
+    // (big items stay near the gear: the mug is tall enough to drop off the bottom of wide, short windows)
+    { x0: -frameHalfX + 4.5, x1: frameHalfX - 4.5, z0: rigHD + ext.halfD + 0.9, z1: Math.max(rigHD + ext.halfD + 1.5, rigHD + 7.5 - ext.halfD * 0.3), vertical: false, weight: 5 },
     // Rear behind patch cables (super visible in desk & top angles)
     { x0: -frameHalfX + 4.5, x1: frameHalfX - 4.5, z0: -(rigHD + rearPad + 8.5) + ext.halfD * 0.4, z1: -(rigHD + rearPad + ext.halfD + 0.5), vertical: false, weight: 4 },
   ]
@@ -499,8 +519,8 @@ export function randomSafeSpot3D(
       { x0: rigHW + (isLong ? ext.halfD : ext.halfW) + 1.0, x1: maxX - (isLong ? ext.halfD : ext.halfW), z0: -rigHD, z1: rigHD, vertical: isLong, weight: 3 },
     )
   }
-  // the candle belongs at the top (far side) of the table, behind the gear
-  if (id === 'candle') bands.splice(0, bands.length, bands[1])
+  // the candle, mug and coaster belong at the top (far side) of the table, behind the gear
+  if (TOP_ONLY.has(id)) bands.splice(0, bands.length, bands[1])
   const validBands = bands.filter((b) => b.x1 > b.x0 + 0.4 && b.z1 > b.z0 + 0.4)
   if (!validBands.length) {
     validBands.push({ x0: -21, x1: 21, z0: rigHD + 3.8, z1: rigHD + 9.2, vertical: false, weight: 1 })
