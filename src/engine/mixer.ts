@@ -9,6 +9,7 @@
  * runs through the channel strip like a local file.
  */
 import type { Deck } from './deck'
+import { track as trackEvent } from '../analytics'
 import { FX_TYPES, FxSlot, type FxType } from './sidekickFx'
 import { audioContext, clamp, waitFor } from './util'
 
@@ -600,6 +601,7 @@ export class Mixer {
     this.connectMain()
     this.moveCue()
     this.set({ streamFx: 'on' })
+    trackEvent('stream_fx_started')
     this.routeCapture(true)
   }
 
@@ -793,6 +795,7 @@ export class Mixer {
     this.set({ focus: this.s.focus === 'both' && c === undefined ? 'both' : ch, screen: 'fx', screenCh: ch })
   }
   selectFx(fx: FxType, close = true) {
+    trackEvent('mixer_fx', { fx: String(fx) })
     const c = this.s.screen === 'fx' ? this.s.screenCh : this.s.focus === 'both' ? 0 : this.s.focus
     this.setCh(c, { fx })
     this.applyCh(c)

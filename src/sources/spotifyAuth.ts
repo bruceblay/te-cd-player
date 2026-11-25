@@ -1,3 +1,4 @@
+import { track } from '../analytics'
 // Authorization-code-with-PKCE flow. No backend needed: the client ID is public
 // and configured once by the app owner via VITE_SPOTIFY_CLIENT_ID in .env.local.
 const CLIENT_ID = (import.meta.env.VITE_SPOTIFY_CLIENT_ID as string | undefined)?.trim() || ''
@@ -68,6 +69,7 @@ const b64url = (buf: ArrayBuffer) =>
     .replace(/=+$/, '')
 
 export async function beginSpotifyLogin(pending?: PendingSpotifyState) {
+  track('spotify_connect')
   if (!CLIENT_ID) throw new Error('spotify_setup_required')
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)).buffer)
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))

@@ -4,6 +4,7 @@
  * Without saved mappings the BC-1's own MIDI spec is used (channel 1, CC 23-26).
  */
 import type { Deck } from './deck'
+import { track } from '../analytics'
 import type { Mixer } from './mixer'
 
 type Ch = 0 | 1
@@ -347,6 +348,7 @@ export class MidiLearn {
       store(MAP_KEY, JSON.stringify(mappings))
       this.held.set(source, pressed)
       this.set({ mappings, target: null, lastBound: { source, control: target } })
+      track('midi_mapped')
       return
     }
 

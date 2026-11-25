@@ -44,6 +44,7 @@ import { buildControls, midiLearn } from './engine/midiLearn'
 import { MidiLearnLayer } from './ui/MidiLearn'
 import { IS_PHONE } from './ui/phone'
 import { bootDone, bootWithPage } from './ui/boot'
+import { track } from './analytics'
 import { bindSpinningFavicon } from './ui/spinFavicon'
 import { BUILT_IN_DISCS, openBuiltIn } from './engine/builtInDiscs'
 
@@ -153,11 +154,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const setView = (next: ViewMode) => {
+    track('view_changed', { view: next })
     setViewState(next)
     saveViewMode(next)
   }
   const [surface, setSurfaceState] = useState<SurfaceMode>(readSurface)
   const setSurface = (next: SurfaceMode) => {
+    track('surface_changed', { surface: next })
     setSurfaceState(next)
     saveSurface(next)
   }
@@ -206,6 +209,7 @@ export default function App() {
     setProps((cur) => updater(cur ?? []))
   }
   const toggleProp = (id: PropId) => {
+    track('desk_item', { item: id, on: !(props ?? []).some((p) => p.id === id) })
     updateProps((cur) => {
       if (cur.some((p) => p.id === id)) return cur.filter((p) => p.id !== id)
       if (id === 'tea') {
@@ -263,6 +267,7 @@ export default function App() {
     prevRects.current = map
   }
   const updateLayout = (next: LayoutConfig) => {
+    track('layout_changed', { decks: next.decks, mixer: next.decks === 2 || next.sidekick })
     snapshotLayout()
     setLayout(next)
     if (next.decks === 2) {
@@ -513,7 +518,10 @@ export default function App() {
         layout={layout}
         onLayout={updateLayout}
         handsOn={handsOn}
-        onHandsOn={setHandsOn}
+        onHandsOn={(on) => {
+          track('hand_tracking', { on })
+          setHandsOn(on)
+        }}
         handStyle={handStyle}
         onHandStyle={setHandStyle}
         handStatus={handStatus}

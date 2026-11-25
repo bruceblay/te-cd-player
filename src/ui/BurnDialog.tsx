@@ -4,6 +4,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { DISC_COLORS, resolveFiles, resolveLink, type Compilation, type Item } from '../engine/compilation'
 import { BUILT_IN_DISCS, openBuiltIn } from '../engine/builtInDiscs'
+import { track } from '../analytics'
 import { deleteDisc, listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
 import type { Deck } from '../engine/deck'
 import { parseSpotify } from '../sources/spotify'
@@ -109,6 +110,7 @@ export const BurnDialog = forwardRef<
     setProblem(null)
     try {
       const disc = await saveDisc(draft)
+      track('disc_saved')
       if (token !== session.current) return
       setDraft((d) => (d === draft ? disc : { ...d, savedId: disc.savedId }))
       setSavedSnapshot(disc)
@@ -132,6 +134,7 @@ export const BurnDialog = forwardRef<
     setProblem(null)
     try {
       await deleteDisc(id)
+      track('disc_deleted')
       if (token !== session.current) return
       // keep the tracks on screen, just no longer tied to a saved copy
       setDraft((d) => (d.savedId === id ? { ...d, savedId: undefined } : d))
@@ -151,6 +154,7 @@ export const BurnDialog = forwardRef<
       const builtIn = BUILT_IN_DISCS.find((d) => d.id === id)
       const m = mount()
       if (builtIn && !m) return
+      if (builtIn) track('builtin_disc', { disc: builtIn.title })
       const disc = builtIn ? await openBuiltIn(builtIn, m!) : await openDisc(id)
       if (token !== session.current) return
       setDraft(disc)
@@ -253,6 +257,8 @@ export const BurnDialog = forwardRef<
   const loadIntoDeck = () => {
     if (!draft.items.length) return
     dlg.current?.close()
+    // which sources people mix: e.g. "youtube" or "local+spotify"
+    track('disc_loaded', { sources: [...new Set(draft.items.map((i) => i.kind))].sort().join('+'), tracks: draft.items.length })
     void deck.loadDisc({ ...draft, title: draft.title.trim() || 'untitled' })
   }
 

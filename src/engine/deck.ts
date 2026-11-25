@@ -1,4 +1,5 @@
 import { CompilationSource, DISC_COLORS, resolveFiles, resolveLink, type Compilation } from './compilation'
+import { trackOnce } from '../analytics'
 import { Midi, type MidiCommand } from './midi'
 import type { Capabilities, DiscInfo, Source, SourceCallbacks } from './types'
 import { audioContext, clamp } from './util'
@@ -364,6 +365,7 @@ export class Deck {
       this.source.play()
       this.set({ transport: 'playing', entry: null })
       this.clockStart()
+      trackOnce('first_play', { source: this.source.kind })
     }
   }
 

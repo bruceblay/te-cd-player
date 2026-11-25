@@ -11,6 +11,7 @@ import { COASTER_H, PROP_FOOTPRINT_3D, buildProp3D, type PropRig3D } from './bui
 import { SK_D, SK_W, buildSidekick, type SidekickRig } from './buildSidekick'
 import { buildStudioRoom } from './buildStudioRoom'
 import { IS_PHONE } from '../ui/phone'
+import { track } from '../analytics'
 import { bootFrameDrawn, bootWith3DTextures } from '../ui/boot'
 import type { PlacedProp, PropId } from '../ui/DeskProps'
 import {
@@ -1016,6 +1017,7 @@ export function Studio3D({
       const live = propRigs.get(id)
       if (!live || !live.rig.isDie) return
       const nextFace = rollDieFace(id, live.rig.face)
+      track('dice_roll', { die: id, view: '3d' })
       const dir = Math.random() > 0.5 ? 1 : -1
       const rotDelta = onDrop
         ? dir * (18 + Math.round(Math.random() * 44))
@@ -1672,6 +1674,7 @@ export function Studio3D({
             className={preset === p.id ? 'on' : ''}
             onClick={() => {
               setPreset(p.id)
+              track('camera_view', { view: p.id })
               cameraGoalRef.current = presetPose(p.id, deckCount, mixerOn, aspectRef.current)
             }}
           >

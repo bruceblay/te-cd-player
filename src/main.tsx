@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles.css'
 import { bootProgress } from './ui/boot'
+import './analytics'
 
 // the code has arrived: the loading screen now waits on images and textures
 bootProgress(0.48)

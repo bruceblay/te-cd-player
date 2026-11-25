@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { track } from '../analytics'
 import baggieImg from '../assets/props/baggie.png'
 import candleImg from '../assets/props/candle.png'
 import capoImg from '../assets/props/capo.png'
@@ -831,6 +832,7 @@ export function DeskProps({
       cur.map((p) => (p.id === prop.id ? { ...p, x: nextX, y: nextY, face: finalFace, rot: p.rot + rotDelta } : p)),
     )
     diceRefs.current[prop.id]?.roll(finalFace, onDrop)
+    track('dice_roll', { die: prop.id, view: '2d' })
   }
 
   /** Subtle realistic rotation + settle nudge whenever any physical item is placed down. */
