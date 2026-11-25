@@ -56,7 +56,12 @@ export async function openDisc(id: string): Promise<SavedDisc> {
     return await new Promise<SavedDisc>((resolve, reject) => {
       const req = db.transaction('discs').objectStore('discs').get(id)
       req.onerror = () => reject(req.error)
-      req.onsuccess = () => req.result ? resolve(req.result) : reject(new Error('disc missing'))
+      req.onsuccess = () => {
+        const disc = req.result as SavedDisc | undefined
+        if (!disc) return reject(new Error('disc missing'))
+        // Spotify was removed: discs saved with Spotify tracks keep the rest
+        resolve({ ...disc, items: disc.items.filter((i) => (i.kind as string) !== 'spotify') })
+      }
     })
   } finally {
     db.close()

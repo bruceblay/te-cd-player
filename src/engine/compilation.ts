@@ -1,20 +1,17 @@
 /*
  * A burned disc: an ordered list of tracks that may each come from a different
- * place (YouTube, SoundCloud, Spotify, local files). `resolve*` turns what the
+ * place (YouTube, SoundCloud, local files). `resolve*` turns what the
  * user adds into tracks; `CompilationSource` plays the list by handing each
  * track to the right underlying player and switching players between tracks.
  */
 import { isPlayableFile, LocalSource, type LocalAudio } from '../sources/local'
 import { isSoundCloud, SoundCloudSource } from '../sources/soundcloud'
-import { parseSpotify, resolveTracks, SpotifyEmbedSource, SpotifySdkSource, type SpTrack } from '../sources/spotify'
-import { spotifyConfigured, spotifyToken } from '../sources/spotifyAuth'
 import { parseYouTube, YouTubeSource } from '../sources/youtube'
 import type { Capabilities, DiscInfo, Source, SourceCallbacks, SourceKind } from './types'
 
 export type Item =
   | { kind: 'youtube'; key: string; id: string; title: string; duration?: number }
   | { kind: 'soundcloud'; key: string; url: string; index: number; title: string; duration?: number }
-  | { kind: 'spotify'; key: string; uri: string; title: string; duration?: number; embed?: boolean }
   | { kind: 'local'; key: string; file: LocalAudio; title: string; duration?: number }
 
 export interface Compilation {
@@ -87,26 +84,6 @@ export async function resolveLink(url: string, mount: HTMLElement): Promise<{ ti
       src.destroy()
     }
   }
-  const sp = parseSpotify(url)
-  if (sp) {
-    if (spotifyConfigured()) {
-      if (!(await spotifyToken())) {
-        throw new Error('spotify_login_required')
-      }
-      const info = await resolveTracks(sp)
-      return {
-        title: info.title,
-        items: info.tracks.map((t) => ({ kind: 'spotify', key: key(), uri: t.uri, title: t.title, duration: t.duration })),
-      }
-    }
-    // Full playlist / album import needs Spotify OAuth; single tracks can still play via public embed
-    if (sp.type === 'playlist' || sp.type === 'album') {
-      throw new Error('spotify_setup_required')
-    }
-    const o = await oembed(`https://open.spotify.com/oembed?url=https://open.spotify.com/${sp.type}/${sp.id}`)
-    const title = o?.title ?? 'Spotify'
-    return { title, items: [{ kind: 'spotify', key: key(), uri: `spotify:${sp.type}:${sp.id}`, title, embed: true }] }
-  }
   throw new Error('unsupported')
 }
 
@@ -145,14 +122,11 @@ export class CompilationSource implements Source {
     bus: AudioNode,
   ) {
     const yt: string[] = []
-    const sp: SpTrack[] = []
     const local: LocalAudio[] = []
     comp.items.forEach((it, i) => {
       if (it.kind === 'youtube') this.slots[i] = { child: 'yt', index: yt.push(it.id) - 1 }
       else if (it.kind === 'soundcloud') this.slots[i] = { child: `sc:${it.url}`, index: it.index }
-      else if (it.kind === 'local') this.slots[i] = { child: 'local', index: local.push(it.file) - 1 }
-      else if (it.embed) this.slots[i] = { child: `spe:${i}`, index: 0 }
-      else this.slots[i] = { child: 'sp', index: sp.push({ uri: it.uri, title: it.title, duration: it.duration ?? 0 }) - 1 }
+      else this.slots[i] = { child: 'local', index: local.push(it.file) - 1 }
     })
     const wrap = (child: string): SourceCallbacks => ({
       onEnded: () => this.isActive(child) && cb.onEnded(),
@@ -167,13 +141,7 @@ export class CompilationSource implements Source {
     for (const s of new Set(this.slots.map((x) => x.child))) {
       if (s === 'yt') this.plans.set(s, () => new YouTubeSource({ ids: yt }, mount, wrap(s)))
       else if (s === 'local') this.plans.set(s, () => new LocalSource(local, wrap(s), bus, true))
-      else if (s === 'sp') this.plans.set(s, () => new SpotifySdkSource({ type: 'track', id: '' }, wrap(s), sp))
-      else if (s.startsWith('sc:')) this.plans.set(s, () => new SoundCloudSource(s.slice(3), mount, wrap(s)))
-      else {
-        const it = comp.items[Number(s.slice(4))] as Extract<Item, { kind: 'spotify' }>
-        const [, type, id] = it.uri.split(':')
-        this.plans.set(s, () => new SpotifyEmbedSource({ type: type as 'track', id }, mount, wrap(s)))
-      }
+      else this.plans.set(s, () => new SoundCloudSource(s.slice(3), mount, wrap(s)))
     }
   }
 
@@ -212,7 +180,7 @@ export class CompilationSource implements Source {
     const duration = this.active.duration()
     if (duration > 0) this.comp.items[0].duration = duration
     return {
-      id: this.comp.savedId ? JSON.stringify([this.comp.savedId, ...this.comp.items.map(i => i.key)]) : `mix:${this.comp.items.map((i) => (i.kind === 'youtube' ? i.id : i.kind === 'soundcloud' ? `${i.url}#${i.index}` : i.kind === 'spotify' ? i.uri : typeof i.file === 'string' ? i.file : i.file.name)).join('|')}`.slice(0, 400),
+      id: this.comp.savedId ? JSON.stringify([this.comp.savedId, ...this.comp.items.map(i => i.key)]) : `mix:${this.comp.items.map((i) => (i.kind === 'youtube' ? i.id : i.kind === 'soundcloud' ? `${i.url}#${i.index}` : typeof i.file === 'string' ? i.file : i.file.name)).join('|')}`.slice(0, 400),
       kind: 'mix',
       title: this.comp.title,
       color: this.comp.color,

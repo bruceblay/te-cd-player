@@ -1721,7 +1721,7 @@ button {
   outline-offset: 1px;
 }
 
-/* Spotify minimal inline status (matches TE flat typography, no nested boxes) */
+/* minimal inline status (matches TE flat typography, no nested boxes) */
 .sp-status {
   display: flex;
   align-items: center;

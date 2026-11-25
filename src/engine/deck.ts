@@ -464,7 +464,7 @@ export class Deck {
   /** why varispeed can't work on the current track, or null when it can */
   varispeedBlocked(): string | null {
     if (!this.source || !this.s.caps || this.s.caps.varispeed) return null
-    const name = { soundcloud: 'SoundCloud', spotify: 'Spotify' }[this.source.kind as string]
+    const name = { soundcloud: 'SoundCloud' }[this.source.kind as string]
     return `Varispeed is unavailable: ${name ? `${name}’s player` : 'this player'} can’t change playback speed`
   }
 

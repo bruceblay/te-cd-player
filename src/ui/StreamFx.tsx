@@ -12,7 +12,7 @@ const ROUTE_TEXT: Record<CaptureRoute, string> = {
   none: 'waiting for a streaming disc',
 }
 
-/** Drawer section: run YouTube, SoundCloud and Spotify through the mixer by capturing this tab. */
+/** Drawer section: run YouTube and SoundCloud through the mixer by capturing this tab. */
 export function StreamFxSection({ mixer, open }: { mixer: Mixer | null; open: boolean }) {
   const s = useSyncExternalStore<MixerState | null>(mixer ? mixer.subscribe : noSub, mixer ? mixer.getState : noState)
   const tab = open ? 0 : -1
@@ -26,7 +26,7 @@ export function StreamFxSection({ mixer, open }: { mixer: Mixer | null; open: bo
   else if (s.streamFxError) note = s.streamFxError
   else
     note =
-      'run YouTube, SoundCloud and Spotify through the mixer’s EQ, compressor and FX. Chrome asks to share this tab with its audio, and the sound then plays from a small window that stays open'
+      'run YouTube and SoundCloud through the mixer’s EQ, compressor and FX. Chrome asks to share this tab with its audio, and the sound then plays from a small window that stays open'
 
   return (
     <section className="drawer-section drawer-divider">

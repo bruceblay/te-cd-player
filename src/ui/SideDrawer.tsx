@@ -1,9 +1,3 @@
-import {
-  beginSpotifyLogin,
-  spotifyConfigured,
-  spotifyLogout,
-  type SpotifyProfile,
-} from '../sources/spotifyAuth'
 import { MidiSection } from './MidiLearn'
 import { StreamFxSection } from './StreamFx'
 import { IS_PHONE } from './phone'
@@ -147,9 +141,6 @@ export function SideDrawer({
   onToggleProp,
   onScatterProps,
   onClearProps,
-  spotifyIn,
-  spotifyProfile,
-  onSpotifyOut,
   mixer,
 }: {
   open: boolean
@@ -172,13 +163,9 @@ export function SideDrawer({
   onToggleProp: (id: PropId) => void
   onScatterProps: () => void
   onClearProps: () => void
-  spotifyIn: boolean
-  spotifyProfile: SpotifyProfile | null
-  onSpotifyOut: () => void
   mixer: Mixer | null
 }) {
   const activeProps = new Set(props.map((p) => p.id))
-  const spotifyReady = spotifyConfigured()
   return (
     <>
       <button
@@ -323,54 +310,6 @@ export function SideDrawer({
           {handStatus.state === 'error' && <p className="drawer-note error">{handStatus.error}</p>}
         </section>
         </>)}
-
-        {(spotifyReady || import.meta.env.DEV) && (
-          <section className="drawer-section drawer-divider">
-            <div className="drawer-section-head">
-              <h3 className="drawer-label">spotify</h3>
-              {spotifyIn ? (
-                <button
-                  type="button"
-                  className="drawer-link"
-                  tabIndex={open ? 0 : -1}
-                  onClick={() => {
-                    spotifyLogout()
-                    onSpotifyOut()
-                  }}
-                >
-                  sign out
-                </button>
-              ) : (
-                spotifyReady && (
-                  <button
-                    type="button"
-                    className="drawer-link"
-                    tabIndex={open ? 0 : -1}
-                    onClick={() => void beginSpotifyLogin()}
-                  >
-                    connect
-                  </button>
-                )
-              )}
-            </div>
-
-            {spotifyIn ? (
-              <>
-                <p className="sp-status">
-                  <span className="sp-dot" aria-hidden />
-                  <span>{spotifyProfile ? spotifyProfile.name : 'connected'}</span>
-                </p>
-                {spotifyProfile && !spotifyProfile.premium && (
-                  <p className="drawer-note">playlist import ready · full playback needs Premium</p>
-                )}
-              </>
-            ) : spotifyReady ? (
-              <p className="drawer-note">sign in to import full playlists and albums</p>
-            ) : (
-              <p className="drawer-note">set VITE_SPOTIFY_CLIENT_ID in .env.local to enable sign-in</p>
-            )}
-          </section>
-        )}
 
         {!IS_PHONE && <MidiSection open={open} onLearn={onClose} />}
         {!IS_PHONE && <StreamFxSection mixer={mixer} open={open} />}

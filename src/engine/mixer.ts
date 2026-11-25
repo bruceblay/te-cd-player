@@ -3,7 +3,7 @@
  * slots, cue bus, tempo per channel and an FX automation sequencer.
  *
  * Only audio the page owns can be processed, so EQ / compressor / pan / FX work
- * on local files. A streaming deck (YouTube, SoundCloud, Spotify) follows its
+ * on local files. A streaming deck (YouTube, SoundCloud) follows its
  * fader, gain cut and the main volume through the player's own volume, unless
  * stream FX is on: then the tab's own audio is captured (getDisplayMedia) and
  * runs through the channel strip like a local file.

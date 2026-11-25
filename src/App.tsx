@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Deck } from './engine/deck'
-import { completeSpotifyLogin, fetchSpotifyProfile, spotifyToken, type SpotifyProfile } from './sources/spotifyAuth'
 import { Device } from './ui/Device'
 import { BurnDialog, type BurnDialogHandle } from './ui/BurnDialog'
 import { Mixer } from './engine/mixer'
@@ -60,7 +59,7 @@ if (OG) {
     kind: 'mix',
     title: 'cds.bruceblay.com',
     color: '#22468c',
-    tracks: [t('burn a disc', 214), t('youtube', 187), t('soundcloud', 242), t('spotify', 198), t('local files', 231), t('two decks', 176), t('k.o. sidekick', 263), t('patch cables', 205)],
+    tracks: [t('burn a disc', 214), t('youtube', 187), t('soundcloud', 242), t('local files', 231), t('two decks', 176), t('k.o. sidekick', 263), t('patch cables', 205)],
   })
   decks[1].showcase({
     id: 'og-b',
@@ -372,8 +371,6 @@ export default function App() {
     active.current = i
     burn.current[i]?.open()
   }
-  const [spotifyIn, setSpotifyIn] = useState(false)
-  const [spotifyProfile, setSpotifyProfile] = useState<SpotifyProfile | null>(null)
 
   useEffect(() => {
     decks.forEach((deck, i) => deck.setMount(hiddenMount.current[i]))
@@ -381,30 +378,11 @@ export default function App() {
   }, [decks, deckCount])
 
   useEffect(() => {
-    let alive = true
-    const initSpotify = async () => {
-      const res = await completeSpotifyLogin()
-      if (!alive) return
-      const token = res.ok ? await spotifyToken() : await spotifyToken()
-      if (!alive) return
-      const signedIn = !!token
-      setSpotifyIn(signedIn)
-      if (signedIn) {
-        void fetchSpotifyProfile().then((p) => alive && setSpotifyProfile(p))
-      }
-      if (res.handled && res.pending) {
-        const idx = res.pending.deckIndex === 1 && deckCount === 2 ? 1 : 0
-        active.current = idx
-        burn.current[idx]?.open({
-          draft: res.pending.draft,
-          pendingUrl: res.ok ? res.pending.pendingUrl : undefined,
-          error: res.ok ? undefined : res.error,
-        })
-      }
-    }
-    void initSpotify()
-    return () => {
-      alive = false
+    // Spotify was removed: forget any sign-in an earlier version stored
+    try {
+      localStorage.removeItem('bc1.spotify.token')
+    } catch {
+      /* storage blocked */
     }
   }, [])
 
@@ -531,13 +509,7 @@ export default function App() {
         onToggleProp={toggleProp}
         onScatterProps={() => updateProps((cur) => scatterProps(cur, deckCount, mixerOn))}
         onClearProps={() => setProps([])}
-        spotifyIn={spotifyIn}
-        spotifyProfile={spotifyProfile}
         mixer={mixerOn ? getMixer() : null}
-        onSpotifyOut={() => {
-          setSpotifyIn(false)
-          setSpotifyProfile(null)
-        }}
       />}
       {!OG && !IS_PHONE && view === '2d' && propsOn && props && <DeskProps items={props} decks={decks} onChange={updateProps} />}
       <HandTracker enabled={handsOn && !OG && !IS_PHONE} style={handStyle} onStatus={setHandStatus} />
@@ -615,14 +587,7 @@ export default function App() {
             burn.current[i] = el
           }}
           deck={deck}
-          deckIndex={i}
           mount={() => hiddenMount.current[i]}
-          spotifyIn={spotifyIn}
-          spotifyProfile={spotifyProfile}
-          onSpotifyOut={() => {
-            setSpotifyIn(false)
-            setSpotifyProfile(null)
-          }}
         />
       ))}
     </main>

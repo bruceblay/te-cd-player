@@ -1,4 +1,4 @@
-export type SourceKind = 'youtube' | 'soundcloud' | 'spotify' | 'local'
+export type SourceKind = 'youtube' | 'soundcloud' | 'local'
 
 export interface TrackInfo {
   title: string

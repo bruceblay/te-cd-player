@@ -7,25 +7,11 @@ import { BUILT_IN_DISCS, openBuiltIn } from '../engine/builtInDiscs'
 import { track } from '../analytics'
 import { deleteDisc, listDiscs, openDisc, saveDisc, type DiscListing } from '../engine/savedDiscs'
 import type { Deck } from '../engine/deck'
-import { parseSpotify } from '../sources/spotify'
-import {
-  beginSpotifyLogin,
-  spotifyConfigured,
-  spotifyLogout,
-  type PendingSpotifyState,
-  type SpotifyProfile,
-} from '../sources/spotifyAuth'
 import { isSoundCloud } from '../sources/soundcloud'
 import { parseYouTube } from '../sources/youtube'
 
-export interface OpenDiscOptions {
-  draft?: Compilation
-  pendingUrl?: string
-  error?: string
-}
-
 export interface BurnDialogHandle {
-  open(opts?: OpenDiscOptions): void
+  open(): void
 }
 
 const COLOR_NAMES: Record<string, string> = {
@@ -35,65 +21,38 @@ const COLOR_NAMES: Record<string, string> = {
   '#c9cbd0': 'silver',
   '#ece6d6': 'cream',
 }
-const SOURCE: Record<Item['kind'], string> = { youtube: 'youtube', soundcloud: 'soundcloud', spotify: 'spotify', local: 'file' }
+const SOURCE: Record<Item['kind'], string> = { youtube: 'youtube', soundcloud: 'soundcloud', local: 'file' }
 const time = (d?: number) => (d && d > 0 ? `${Math.floor(d / 60)}:${String(Math.floor(d % 60)).padStart(2, '0')}` : '')
 
-function describeLink(raw: string): { source: 'YouTube' | 'SoundCloud' | 'Spotify'; isCollection: boolean } | null {
+function describeLink(raw: string): { source: 'YouTube' | 'SoundCloud'; isCollection: boolean } | null {
   const yt = parseYouTube(raw)
   if (yt) return { source: 'YouTube', isCollection: !!yt.list }
   if (isSoundCloud(raw)) return { source: 'SoundCloud', isCollection: raw.includes('/sets/') }
-  const sp = parseSpotify(raw)
-  if (sp) return { source: 'Spotify', isCollection: sp.type === 'playlist' || sp.type === 'album' }
   return null
 }
 
-function serializeDraft(draft: Compilation): PendingSpotifyState['draft'] {
-  return {
-    savedId: draft.savedId,
-    title: draft.title,
-    color: draft.color,
-    items: draft.items.filter((i): i is Exclude<Item, { kind: 'local' }> => i.kind !== 'local'),
-  }
-}
+const isSpotify = (raw: string) => /(^|\/\/|\.)spotify\.com\/|^spotify:/i.test(raw)
 
 function formatLinkError(err: unknown): string {
   const msg = err instanceof Error ? err.message : ''
-  if (msg === 'spotify_expired') return 'Spotify session expired — sign in again'
-  if (msg === 'spotify_forbidden') {
-    const why = err instanceof Error && typeof err.cause === 'string' && err.cause ? ` (${err.cause})` : ''
-    return `Spotify denied access${why}`
-  }
-  if (msg === 'spotify_not_found') return 'Spotify playlist not found or private'
   if (msg === 'empty') return 'no playable tracks found in that link'
-  if (msg === 'spotify_login_required') return 'signing in to Spotify…'
-  if (msg === 'spotify_setup_required') {
-    return import.meta.env.DEV
-      ? 'Spotify playlists require VITE_SPOTIFY_CLIENT_ID in .env.local'
-      : 'Spotify playlist import isn’t enabled yet'
-  }
   return 'can’t add this link'
 }
 
 /**
  * Make a disc: name it, pick its colour, add tracks or import playlists from
- * YouTube, SoundCloud, Spotify, and local files, drag them into order, and load.
+ * YouTube, SoundCloud and local files, drag them into order, and load.
  */
 export const BurnDialog = forwardRef<
   BurnDialogHandle,
   {
     deck: Deck
-    deckIndex: number
     mount: () => HTMLElement | null
-    spotifyIn: boolean
-    spotifyProfile: SpotifyProfile | null
-    onSpotifyOut(): void
   }
->(function BurnDialog({ deck, deckIndex, mount, spotifyIn, spotifyProfile, onSpotifyOut }, ref) {
+>(function BurnDialog({ deck, mount }, ref) {
   const dlg = useRef<HTMLDialogElement>(null)
   const linkInput = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<Compilation>({ title: '', color: DISC_COLORS[0], items: [] })
-  const draftRef = useRef(draft)
-  draftRef.current = draft
 
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
@@ -170,22 +129,9 @@ export const BurnDialog = forwardRef<
   const add = (title: string, items: Item[]) =>
     setDraft((d) => ({ ...d, title: d.title || (d.items.length ? d.title : title), items: [...d.items, ...items] }))
 
-  const connectSpotify = async (pendingUrl?: string) => {
-    setProblem(null)
-    try {
-      await beginSpotifyLogin({
-        deckIndex,
-        pendingUrl: pendingUrl?.trim() || undefined,
-        draft: serializeDraft(draftRef.current),
-      })
-    } catch (e) {
-      setProblem(formatLinkError(e))
-    }
-  }
-
-  const addLink = async (overrideUrl?: string) => {
+  const addLink = async () => {
     const token = session.current
-    const link = (overrideUrl ?? url).trim()
+    const link = url.trim()
     const m = mount()
     if (!link || !m || busy) return
     setBusy(true)
@@ -197,13 +143,6 @@ export const BurnDialog = forwardRef<
       setUrl('')
     } catch (e) {
       if (token !== session.current) return
-      if (e instanceof Error && e.message === 'spotify_expired') {
-        onSpotifyOut()
-      }
-      if (e instanceof Error && e.message === 'spotify_login_required') {
-        await connectSpotify(link)
-        return
-      }
       setProblem(formatLinkError(e))
     } finally {
       if (token === session.current) {
@@ -214,7 +153,7 @@ export const BurnDialog = forwardRef<
   }
 
   useImperativeHandle(ref, () => ({
-    open(opts) {
+    open() {
       const token = ++session.current
       setBusy(false)
       setSaving(false)
@@ -226,17 +165,13 @@ export const BurnDialog = forwardRef<
           if (token === session.current) setSaved(rows)
         })
         .catch(() => {})
-      const c = opts?.draft ?? deck.compilation
+      const c = deck.compilation
       const nextDraft = c ? { ...c, items: c.items.slice() } : { title: '', color: DISC_COLORS[0], items: [] }
       setDraft(nextDraft)
-      draftRef.current = nextDraft
-      setUrl(opts?.pendingUrl ?? '')
-      setProblem(opts?.error ?? null)
+      setUrl('')
+      setProblem(null)
       dlg.current?.showModal()
       requestAnimationFrame(() => linkInput.current?.focus())
-      if (opts?.pendingUrl && !opts.error) {
-        void addLink(opts.pendingUrl)
-      }
     },
   }))
 
@@ -259,7 +194,6 @@ export const BurnDialog = forwardRef<
     deck.eject()
     const blank = { title: '', color: DISC_COLORS[0], items: [] }
     setDraft(blank)
-    draftRef.current = blank
     setSavedSnapshot(null)
     setUrl('')
     setProblem(null)
@@ -269,16 +203,15 @@ export const BurnDialog = forwardRef<
   const loadIntoDeck = () => {
     if (!draft.items.length) return
     dlg.current?.close()
-    // which sources people mix: e.g. "youtube" or "local+spotify"
+    // which sources people mix: e.g. "youtube" or "local+soundcloud"
     track('disc_loaded', { sources: [...new Set(draft.items.map((i) => i.kind))].sort().join('+'), tracks: draft.items.length })
     void deck.loadDisc({ ...draft, title: draft.title.trim() || 'untitled' })
   }
 
   const detected = describeLink(url.trim())
-  const isSpotifyLink = detected?.source === 'Spotify'
-  const linkError = problem ?? (url.trim() && !detected ? 'unsupported link' : '')
+  const linkError =
+    problem ?? (url.trim() && !detected ? (isSpotify(url.trim()) ? 'Spotify links aren’t supported' : 'unsupported link') : '')
   const width = Math.max(2, String(draft.items.length).length)
-  const configured = spotifyConfigured()
 
   return (
     <dialog ref={dlg} className="lid burn" onClose={() => { session.current++ }} onClick={(e) => e.target === dlg.current && dlg.current?.close()}>
@@ -359,7 +292,7 @@ export const BurnDialog = forwardRef<
             setUrl(e.target.value)
             setProblem(null)
           }}
-          placeholder="YouTube, SoundCloud or Spotify link / playlist"
+          placeholder="YouTube or SoundCloud link / playlist"
           aria-label="link"
           spellCheck={false}
           autoComplete="off"
@@ -371,31 +304,6 @@ export const BurnDialog = forwardRef<
       <div role="status">
         {linkError && <p className="lid-error">{linkError}</p>}
       </div>
-
-      {isSpotifyLink && !spotifyIn && !linkError && (
-        <p className="lid-note">
-          {configured ? (
-            <>
-              Importing signs in to Spotify (your draft is kept).{' '}
-              <button type="button" className="lid-inline-link" onClick={() => void connectSpotify(url)}>
-                connect now
-              </button>
-            </>
-          ) : detected?.isCollection ? (
-            import.meta.env.DEV
-              ? 'Spotify playlists require VITE_SPOTIFY_CLIENT_ID in .env.local.'
-              : 'Spotify playlist import isn’t enabled yet.'
-          ) : (
-            'Adds one track using the Spotify embed.'
-          )}
-        </p>
-      )}
-
-      {isSpotifyLink && spotifyIn && detected?.isCollection && !busy && !linkError && (
-        <p className="lid-note">
-          Spotify connected{spotifyProfile ? ` (${spotifyProfile.name})` : ''} — imports the full tracklist.
-        </p>
-      )}
 
       <footer className="lid-actions">
         <div className="lid-local">
@@ -442,11 +350,6 @@ export const BurnDialog = forwardRef<
           {deck.compilation && (
             <button type="button" className="lid-text muted" onClick={ejectAndStartOver}>
               eject
-            </button>
-          )}
-          {spotifyIn && (
-            <button type="button" className="lid-text muted" onClick={() => (spotifyLogout(), onSpotifyOut())}>
-              sign out spotify
             </button>
           )}
         </div>
