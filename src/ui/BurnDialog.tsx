@@ -254,6 +254,18 @@ export const BurnDialog = forwardRef<
     })
   }
 
+  // eject empties the deck and leaves the dialog open on a blank disc, ready for the next one
+  const ejectAndStartOver = () => {
+    deck.eject()
+    const blank = { title: '', color: DISC_COLORS[0], items: [] }
+    setDraft(blank)
+    draftRef.current = blank
+    setSavedSnapshot(null)
+    setUrl('')
+    setProblem(null)
+    requestAnimationFrame(() => linkInput.current?.focus())
+  }
+
   const loadIntoDeck = () => {
     if (!draft.items.length) return
     dlg.current?.close()
@@ -428,7 +440,7 @@ export const BurnDialog = forwardRef<
             </button>
           )}
           {deck.compilation && (
-            <button type="button" className="lid-text muted" onClick={() => (deck.eject(), dlg.current?.close())}>
+            <button type="button" className="lid-text muted" onClick={ejectAndStartOver}>
               eject
             </button>
           )}
