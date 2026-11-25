@@ -2,7 +2,7 @@ import { CompilationSource, DISC_COLORS, resolveFiles, resolveLink, type Compila
 import { trackOnce } from '../analytics'
 import { Midi, type MidiCommand } from './midi'
 import type { Capabilities, DiscInfo, Source, SourceCallbacks } from './types'
-import { audioContext, clamp } from './util'
+import { audioContext, clamp, sameValue } from './util'
 
 export type Transport = 'stopped' | 'playing' | 'paused'
 export type Repeat = 'off' | 'one' | 'all'
@@ -161,6 +161,16 @@ export class Deck {
     return () => this.listeners.delete(fn)
   }
   private set(patch: Partial<DeckState>) {
+    // publish only real changes: every subscriber (the 2D deck, the 3D studio) redraws on each one
+    let changed = false
+    for (const k in patch) {
+      const key = k as keyof DeckState
+      if (!sameValue(patch[key], this.s[key])) {
+        changed = true
+        break
+      }
+    }
+    if (!changed) return
     this.s = { ...this.s, ...patch }
     this.listeners.forEach((l) => l())
   }

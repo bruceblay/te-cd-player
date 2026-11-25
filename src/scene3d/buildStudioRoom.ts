@@ -1,4 +1,5 @@
 import { buildBookshelf } from './buildBookshelf'
+import { mergeStatic } from './mergeStatic'
 import * as THREE from 'three'
 import boredomsPrint from '../assets/room/seripop-boredoms-2005.jpg'
 import gardenPhoto from '../assets/room/garden-photo.jpg'
@@ -6,8 +7,8 @@ import mineralPlaster from '../assets/room/mineral-plaster.webp'
 import acousticOak from '../assets/room/acoustic-oak.webp'
 import forestCollage from '../assets/room/forest-collage.webp'
 import windowView from '../assets/room/autumn-park-window.jpg'
-import woodGrain from '../assets/knobs-wood.jpg'
-import rugWeave from '../assets/surfaces/rug.jpg'
+import woodGrain from '../assets/knobs-wood.webp'
+import rugWeave from '../assets/surfaces/rug.webp'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 
 export interface StudioRoomRig {
@@ -727,6 +728,13 @@ export function buildStudioRoom(): StudioRoomRig {
   }
   const daylight = windowGlow.intensity
   setNight(0)
+
+  // one draw call per material for the room's static furnishings (the switch and moon stay separate)
+  for (const g of mergeStatic(group, [lightSwitch, moon])) t.geo(g)
+  // draw the room after the gear and table, so the GPU skips the wall and floor pixels they cover
+  group.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh && o.renderOrder === 0) o.renderOrder = 1
+  })
 
   return {
     group,

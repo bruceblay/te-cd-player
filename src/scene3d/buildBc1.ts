@@ -15,6 +15,7 @@ import {
   createTurntableTexture,
 } from './textures'
 import { createRoundedTopPlane, tagControl } from './types'
+import { mergeStatic } from './mergeStatic'
 
 // BC-1 diagram constants: 370 x 511 units, 120mm CD = 246 units.
 // 1 world unit = 10 mm.
@@ -1072,6 +1073,11 @@ export function buildBc1(deck: Deck, deckIndex: number): Bc1Rig {
       displays.update(s, now)
     }
   }
+
+  // one draw call per material for everything that never moves (the moving and clickable parts stay separate)
+  geometries.push(
+    ...mergeStatic(group, [pwrNub, variRotor, levelRotor, jogPivot, platterSpin, discGroup, ...[...keyGroups.values()].map((k) => k.group)]),
+  )
 
   return {
     group,

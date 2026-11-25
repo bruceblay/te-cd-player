@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import coasterTopUrl from '../assets/props/coaster-top.jpg'
 import type { PropId } from '../ui/DeskProps'
 import { createResinDiceMaterial } from './materials'
+import { mergeStatic } from './mergeStatic'
 
 /** World-unit thickness of the rustic ceramic tile coaster (8.4 mm). */
 export const COASTER_H = 0.84
@@ -27,6 +28,8 @@ export interface PropRig3D {
   onClick?: () => void
   /** Advance animations (returns true while animating) */
   update: (dt: number) => boolean
+  /** True while the item animates on its own (a lit candle's flame, the tea's steam) */
+  ambient: () => boolean
   /** Dispose GPU geometries, materials, and textures */
   dispose: () => void
 }
@@ -1057,7 +1060,7 @@ function buildKeycap(t: ReturnType<typeof createTracker>): THREE.Group {
 
 /* ============================================================
    6. MATTE-BLACK SPRING-LOADED GUITAR TRIGGER CAPO (84 mm)
-   Matched closely to src/assets/props/capo.png
+   Matched closely to src/assets/props/capo.webp
    ============================================================ */
 
 class HelixSpringCurve extends THREE.Curve<THREE.Vector3> {
@@ -1299,6 +1302,7 @@ function buildCandle(t: ReturnType<typeof createTracker>): {
   group: THREE.Group
   update: (dt: number) => void
   toggle: () => void
+  isLit: () => boolean
 } {
   const g = new THREE.Group()
   const R = 2.65
@@ -1393,6 +1397,7 @@ function buildCandle(t: ReturnType<typeof createTracker>): {
 
   return {
     group: g,
+    isLit: () => lit,
     toggle() {
       lit = !lit
       flameGroup.visible = lit
@@ -2057,6 +2062,7 @@ export function buildProp3D(id: PropId, initialFace = 1): PropRig3D {
   let restY = 0
   let curFace = initialFace
   let ambientUpdate: ((dt: number) => void) | null = null
+  let ambientNow: () => boolean = () => false
   let clickAction: (() => void) | undefined = undefined
 
   if (id === 'succulent') {
@@ -2085,17 +2091,22 @@ export function buildProp3D(id: PropId, initialFace = 1): PropRig3D {
     const c = buildCandle(tracker)
     body.add(c.group)
     ambientUpdate = c.update
+    ambientNow = c.isLit
     clickAction = c.toggle
   } else if (id === 'tea') {
     const m = buildTeaMug(tracker)
     body.add(m.group)
     ambientUpdate = m.update
+    ambientNow = () => true
   } else if (id === 'coaster') {
     body.add(buildCoaster(tracker))
   } else {
     body.add(buildBaggie(tracker))
   }
 
+  // fewer draw calls: a die's pips merge inside the die (which rolls as one), the plant merges whole
+  if (dieMesh) for (const g of mergeStatic(dieMesh)) tracker.geo(g)
+  else if (id === 'succulent') for (const g of mergeStatic(body)) tracker.geo(g)
   tagProp(root, id)
   // Keep transparent glass/flame/steam/grab-hit meshes from casting solid opaque shadow silhouettes
   if (id === 'candle' || id === 'tea') {
@@ -2181,6 +2192,7 @@ export function buildProp3D(id: PropId, initialFace = 1): PropRig3D {
       settleAnim = { t: 0, dur: 0.22 }
     },
     onClick: clickAction,
+    ambient: () => ambientNow(),
     update(dt: number) {
       let active = false
       ambientUpdate?.(dt)

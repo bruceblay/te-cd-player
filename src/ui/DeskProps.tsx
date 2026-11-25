@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { track } from '../analytics'
 import baggieImg from '../assets/props/baggie.png'
-import candleImg from '../assets/props/candle.png'
-import capoImg from '../assets/props/capo.png'
-import coasterImg from '../assets/props/coaster.png'
-import d20Img from '../assets/props/d20.png'
-import dieImg from '../assets/props/die.png'
-import keycapImg from '../assets/props/keycap.png'
-import pencilImg from '../assets/props/pencil.png'
-import succulentImg from '../assets/props/succulent.png'
-import teaImg from '../assets/props/tea.png'
+import candleImg from '../assets/props/candle.webp'
+import capoImg from '../assets/props/capo.webp'
+import coasterImg from '../assets/props/coaster.webp'
+import d20Img from '../assets/props/d20.webp'
+import dieImg from '../assets/props/die.webp'
+import keycapImg from '../assets/props/keycap.webp'
+import pencilImg from '../assets/props/pencil.webp'
+import succulentImg from '../assets/props/succulent.webp'
+import teaImg from '../assets/props/tea.webp'
 import type { Deck } from '../engine/deck'
 import { Dice3D, type Dice3DHandle } from './Dice3D'
 
@@ -182,7 +182,12 @@ function gearBounds() {
 
 /** Pick a random spot strictly outside the gear bounding box and clear of other props & the hamburger menu.
  *  When `near` is given, prefers the closest valid spot so items get gently nudged aside rather than teleporting. */
-function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; y: number; rot: number; face?: number }): PlacedProp {
+function randomSafeSpot(
+  id: PropId,
+  existing: PlacedProp[],
+  near?: { x: number; y: number; rot: number; face?: number },
+  anywhere = false,
+): PlacedProp {
   const def = PROP_MAP.get(id)!
   const vw = Math.max(320, window.innerWidth)
   const vh = Math.max(320, window.innerHeight)
@@ -243,7 +248,7 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
     if (vw - minEdgeX > rightMin) addBand(rightMin, vw - minEdgeX, minEdgeY, vh - minEdgeY, def.aspect < 0.3)
   }
   // the candle, and the big mug and coaster, belong at the top of the desk, above the gear and out of reach of its controls
-  if (TOP_ONLY.has(id) && gear) {
+  if (TOP_ONLY.has(id) && gear && !anywhere) {
     const top = bands.filter((b) => b.y1 <= gear.top)
     if (top.length) bands.splice(0, bands.length, ...top)
   }
@@ -324,6 +329,8 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
     const pick = spread.reduce((a, b) => (b.gap > a.gap ? b : a))
     return { id, x: pick.x, y: pick.y, rot: pick.rot, ...(face !== undefined ? { face } : {}) }
   }
+  // nothing fits above the gear (a short, wide window): anywhere clear of it beats overlapping it
+  if (TOP_ONLY.has(id) && !anywhere && !near) return randomSafeSpot(id, existing, near, true)
   return best
     ? { id, x: best.x, y: best.y, rot: best.rot, ...(face !== undefined ? { face } : {}) }
     : { id, x: 8, y: 12, rot: 0, ...(face !== undefined ? { face } : {}) }

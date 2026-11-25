@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeStatic } from './mergeStatic'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { SETTINGS, type Mixer, type MixerState } from '../engine/mixer'
 import { FX_TYPES } from '../engine/sidekickFx'
@@ -1041,6 +1042,21 @@ export function buildSidekick(mixer: Mixer): SidekickRig {
       oled.update(s)
     }
   }
+
+  // one draw call per material for everything that never moves (the moving and clickable parts stay separate)
+  geometries.push(
+    ...mergeStatic(group, [
+      pwrPuckGroup,
+      ...gainRotors,
+      ...eqRotors.flatMap((e) => [e.high, e.mid, e.low]),
+      volumeRotor,
+      phonesRotor,
+      ...faderCaps,
+      padMesh,
+      modPivot,
+      ...[...keyGroups.values()].map((k) => k.group),
+    ]),
+  )
 
   return {
     group,

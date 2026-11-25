@@ -11,7 +11,7 @@
 import type { Deck } from './deck'
 import { track as trackEvent } from '../analytics'
 import { FX_TYPES, FxSlot, type FxType } from './sidekickFx'
-import { audioContext, clamp, waitFor } from './util'
+import { audioContext, clamp, waitFor, sameValue } from './util'
 
 export type EqStyle = 'dj' | 'studio' | 'param'
 export type CompType = 'glue' | 'punch' | 'limit'
@@ -356,6 +356,16 @@ export class Mixer {
     return () => this.listeners.delete(fn)
   }
   private set(patch: Partial<MixerState>) {
+    // publish only real changes: the mixer panel and the 3D studio redraw on each one
+    let changed = false
+    for (const k in patch) {
+      const key = k as keyof MixerState
+      if (!sameValue(patch[key], this.s[key])) {
+        changed = true
+        break
+      }
+    }
+    if (!changed) return
     this.s = { ...this.s, ...patch }
     this.listeners.forEach((l) => l())
   }
@@ -1157,9 +1167,11 @@ export class Mixer {
         lv = [bar(l), bar(r)]
       }
       const fall = (v: number, t: number) => (t > v ? t : Math.max(t, v * 0.85))
-      return { ...c, meter: [fall(c.meter[0], lv[0]), fall(c.meter[1], lv[1])] as [number, number] }
+      const meter: [number, number] = [fall(c.meter[0], lv[0]), fall(c.meter[1], lv[1])]
+      // keep the channel object when its meter hasn't moved, so nothing redraws for it
+      return sameValue(meter, c.meter) ? c : { ...c, meter }
     }) as [ChannelState, ChannelState]
-    patch.ch = ch
+    if (ch[0] !== this.s.ch[0] || ch[1] !== this.s.ch[1]) patch.ch = ch
     const peak = (a: AnalyserNode) => {
       a.getFloatTimeDomainData(this.mbuf)
       let m = 0

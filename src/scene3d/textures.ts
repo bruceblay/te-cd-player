@@ -546,6 +546,9 @@ export function createBc1DisplayUpdater() {
   let blinkPhase = true
   let lastBlink = 0
 
+  let lastShown = ''
+  // fonts arriving after the first draw: draw again with them
+  void document.fonts?.ready.then(() => (lastShown = ''))
   const update = (s: DeckState, now: number) => {
     if (now - lastBlink > 380) {
       blinkPhase = !blinkPhase
@@ -553,6 +556,18 @@ export function createBc1DisplayUpdater() {
     }
     const r = readout(s)
     const on = s.power === 'on'
+    // redraw (and re-upload the textures) only when what the displays show has changed
+    const levelsNow: [number, number] = s.batteryCheck ? [s.battery, s.battery] : on ? s.vu : [0, 0]
+    const shown = [
+      on,
+      [...r.main].map((ch, i) => (on && (!r.blink[i] || blinkPhase) ? ch : '_') + (r.dots[i] ? '.' : '')).join(''),
+      r.vari,
+      r.line,
+      // lit VU segments, counted the way they're drawn below
+      levelsNow.map((v) => [0, 1, 2, 3, 4, 5, 6, 7, 8].filter((i) => v * 9 > 8 - i + 0.15).length).join(','),
+    ].join('|')
+    if (shown === lastShown) return
+    lastShown = shown
 
     drawWindow(mainCtx, 680, 88)
     const groupX = [10, 178, 346, 514]
@@ -997,7 +1012,12 @@ export function createSidekickOledUpdater() {
     ctx.fillText(text, x + w / 2, y + 7.2)
   }
 
+  let lastDrawn: MixerState | null = null
+  void document.fonts?.ready.then(() => (lastDrawn = null))
   const update = (s: MixerState) => {
+    // the screen depends only on the mixer's state: skip redrawing an unchanged one
+    if (s === lastDrawn) return
+    lastDrawn = s
     ctx.save()
     ctx.setTransform(S, 0, 0, S, 0, 0)
     ctx.fillStyle = '#0a0605'

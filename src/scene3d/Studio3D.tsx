@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import knobsWoodUrl from '../assets/knobs-wood.jpg'
+import knobsWoodUrl from '../assets/knobs-wood.webp'
 import type { Deck } from '../engine/deck'
 import type { Mixer } from '../engine/mixer'
 import { capturePointer } from '../ui/controls'
@@ -10,7 +10,6 @@ import { BC1_D, BC1_W, buildBc1, type Bc1Rig } from './buildBc1'
 import { COASTER_H, PROP_FOOTPRINT_3D, buildProp3D, type PropRig3D } from './buildProps3D'
 import { SK_D, SK_W, buildSidekick, type SidekickRig } from './buildSidekick'
 import { buildStudioRoom } from './buildStudioRoom'
-import { IS_PHONE } from '../ui/phone'
 import { track } from '../analytics'
 import { bootFrameDrawn, bootWith3DTextures } from '../ui/boot'
 import { addHandTargets, type HandTarget } from '../ui/handTargets'
@@ -221,6 +220,9 @@ export function Studio3D({
   }
 
   const cameraGoalRef = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null)
+  // wakes the 3D loop (it sleeps while nothing changes); every React render of the studio wakes it
+  const wakeRef = useRef<() => void>(() => {})
+  useEffect(() => wakeRef.current())
   const aspectRef = useRef(16 / 9)
   const presetRef = useRef<CameraPreset>('desk')
   presetRef.current = preset
@@ -267,8 +269,9 @@ export function Studio3D({
 
     bootWith3DTextures()
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    // phones draw at 1.5x: just over half the pixels of 2x, which a phone screen will not show
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_PHONE ? 1.5 : 2))
+    // 1.5x at most: on a 2x (retina) screen that's ~44% fewer pixels to shade, and with antialiasing
+    // it still looks sharp. Typical 1x-1.25x screens are unaffected. Slow machines step down further.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
     renderer.setSize(width, height)
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -392,6 +395,10 @@ export function Studio3D({
         woodTableGroup.add(leg)
       }
     }
+    // the table top is big and richly shaded: draw it after the gear so covered pixels are skipped
+    woodTableGroup.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) o.renderOrder = 1
+    })
     scene.add(woodTableGroup)
 
     // 3. Full Mid-Century Music Studio Room + Desktop Studio Monitor Speakers
@@ -1514,10 +1521,11 @@ export function Studio3D({
     let lastDeskPropsRef: PlacedProp[] | null = null
     let cdFlushAccum = 0
 
-    const updateProps3D = (dt: number) => {
+    /** returns true while a desk item is moving (a roll, a settle, a drag, riding a disc) */
+    const updateProps3D = (dt: number): boolean => {
       const { propsOn: pOn, deskProps: items, decks: curDecks, deckCount: dc } = propsRef.current
       propsGroup.visible = pOn
-      if (!pOn) return
+      if (!pOn) return false
 
       const propsChanged = items !== lastDeskPropsRef
       if (propsChanged) {
@@ -1641,15 +1649,96 @@ export function Studio3D({
           }
         }
       }
+      return anyAnimatingOrSpinning || anyDirty || propsChanged
+    }
+    // is a self-animating item (lit candle, steaming tea) on screen?
+    const ambientFrustum = new THREE.Frustum()
+    const ambientMatrix = new THREE.Matrix4()
+    const ambientSphere = new THREE.Sphere()
+    const propsAmbient = () => {
+      if (!propsGroup.visible) return false
+      ambientMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      ambientFrustum.setFromProjectionMatrix(ambientMatrix)
+      for (const live of propRigs.values()) {
+        if (!live.rig.ambient()) continue
+        ambientSphere.set(live.rig.root.position, 12)
+        if (ambientFrustum.intersectsSphere(ambientSphere)) return true
+      }
+      return false
     }
 
     let raf = 0
     let lastTime = performance.now()
 
+    // ---- Draw only when something changes -------------------------------------------------
+    // A still scene isn't redrawn 60 times a second. Activity (deck and mixer state, the camera,
+    // pointers, props, resizing) wakes the loop for a moment; motion that runs on its own (a
+    // spinning disc, a roll, a camera move, the night fade) keeps it awake. Asleep, it only
+    // animates an on-screen lit candle or the tea's steam, at 20 fps, plus a once-a-second safety redraw.
+    let awakeUntil = performance.now() + 3000
+    let lastRender = 0
+    let shadowDirty = true
+    let lastShadow = 0
+    const wake = (ms = 900) => {
+      awakeUntil = Math.max(awakeUntil, performance.now() + ms)
+    }
+    const wakeAndShadow = () => {
+      wake()
+      shadowDirty = true
+    }
+    renderer.shadowMap.autoUpdate = false
+    const unsubs: (() => void)[] = []
+    const watchDecks = () => {
+      for (const d of propsRef.current.decks) unsubs.push(d.subscribe(() => wake()))
+    }
+    watchDecks()
+    let watchedMixer: Mixer | null = null
+    controls.addEventListener('change', () => wake(600))
+    for (const type of ['pointermove', 'pointerdown', 'pointerup', 'wheel'] as const) dom.addEventListener(type, () => wake(), { passive: true })
+    window.addEventListener('resize', wakeAndShadow)
+    void document.fonts?.ready.then(wakeAndShadow)
+    wakeRef.current = wakeAndShadow
+    let lastPropsSeen: unknown = null
+    let lastLayout = ''
+    // Adaptive resolution: if steady drawing runs slow, lower the pixel ratio a step (never below 1)
+    let slowFrames = 0
+    let timedFrames = 0
+
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
+
+      // wake on new props or layout from React, and follow a newly created mixer
+      const pr = propsRef.current
+      if (pr.deskProps !== lastPropsSeen) {
+        lastPropsSeen = pr.deskProps
+        wakeAndShadow()
+      }
+      const layoutKey = `${pr.deckCount}|${pr.mixerOn}|${pr.surface}|${pr.propsOn}|${JSON.stringify(pr.cables)}`
+      if (layoutKey !== lastLayout) {
+        lastLayout = layoutKey
+        wake(1500)
+        shadowDirty = true
+      }
+      if (pr.mixer && pr.mixer !== watchedMixer) {
+        watchedMixer = pr.mixer
+        unsubs.push(pr.mixer.subscribe(() => wake()))
+      }
+
+      // 60 fps at most: a 120 Hz screen would otherwise double the work for no visible gain
+      if (now - lastRender < 15) return
       const dt = Math.min(0.05, (now - lastTime) / 1000)
       lastTime = now
+
+      if (now > awakeUntil) {
+        // asleep: animate an on-screen candle flame or tea steam at 20 fps, otherwise a slow safety redraw
+        const ambient = propsAmbient()
+        if (ambient ? now - lastRender < 50 : now - lastRender < 1000) return
+        if (ambient) updateProps3D(Math.min(0.05, (now - lastRender) / 1000))
+        renderer.render(scene, camera)
+        bootFrameDrawn()
+        lastRender = now
+        return
+      }
 
       const { decks: curDecks, mixer: curMixer, deckCount: dc, mixerOn: mOn, surface: curSurface } = propsRef.current
       applySurface(curSurface)
@@ -1679,7 +1768,7 @@ export function Studio3D({
       if (dc === 2) bc1Rigs[1].update(curDecks[1].getState(), dt, now)
 
       updateCables()
-      updateProps3D(dt)
+      const propsMoving = updateProps3D(dt)
 
       if (cameraGoalRef.current) {
         const camLerp = Math.min(1, dt * 6.5)
@@ -1694,14 +1783,51 @@ export function Studio3D({
       }
 
       controls.update()
+
+      // stay awake while anything moves on its own
+      const layoutMoving =
+        Math.abs(lp.deckX[0] - bc1Rigs[0].group.position.x) > 0.01 ||
+        (dc === 2 && Math.abs(lp.deckX[1] - bc1Rigs[1].group.position.x) > 0.01)
+      const spinning = bc1Rigs[0].getSpinDelta() !== 0 || (dc === 2 && bc1Rigs[1].getSpinDelta() !== 0)
+      if (spinning || propsMoving || layoutMoving || activeDrag || cameraGoalRef.current || (night > 0 && night < 1) || (night === 1) !== nightOn) {
+        wake(400)
+      }
+      // the shadow map is a whole extra pass: redraw it only when something that casts one moves
+      if (propsMoving || layoutMoving || activeDrag) shadowDirty = true
+      if (shadowDirty && now - lastShadow > 120) {
+        renderer.shadowMap.needsUpdate = true
+        shadowDirty = false
+        lastShadow = now
+      } else if (spinning && now - lastShadow > 250) {
+        // a spinning disc and moving keys: a few shadow updates a second is plenty
+        renderer.shadowMap.needsUpdate = true
+        lastShadow = now
+      }
+
       renderer.render(scene, camera)
       bootFrameDrawn()
+
+      // steady drawing that runs slow (under ~48 fps) steps the resolution down
+      if (lastRender && now - lastRender < 100 && document.visibilityState === 'visible') {
+        timedFrames++
+        if (now - lastRender > 21) slowFrames++
+        if (timedFrames >= 90) {
+          const ratio = renderer.getPixelRatio()
+          if (slowFrames > timedFrames * 0.6 && ratio > 1) renderer.setPixelRatio(Math.max(1, ratio - 0.25))
+          timedFrames = 0
+          slowFrames = 0
+        }
+      }
+      lastRender = now
     }
 
     raf = requestAnimationFrame(tick)
 
     return () => {
       cancelAnimationFrame(raf)
+      for (const u of unsubs) u()
+      window.removeEventListener('resize', wakeAndShadow)
+      wakeRef.current = () => {}
       ro.disconnect()
       controls.removeEventListener('start', cancelGoal)
       controls.dispose()

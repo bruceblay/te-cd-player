@@ -40,3 +40,13 @@ export function audioContext(): AudioContext {
   if (ctx.state === 'suspended') void ctx.resume()
   return ctx
 }
+
+/** equal for publishing purposes: identical, or number tuples (meters) equal to within a hair */
+export function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 1e-4
+  if (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v) => typeof v === 'number')) {
+    return a.every((v, i) => Math.abs(v - (b[i] as number)) < 1e-4)
+  }
+  return false
+}

@@ -3,11 +3,11 @@ import { Deck } from './engine/deck'
 import { completeSpotifyLogin, fetchSpotifyProfile, spotifyToken, type SpotifyProfile } from './sources/spotifyAuth'
 import { Device } from './ui/Device'
 import { BurnDialog, type BurnDialogHandle } from './ui/BurnDialog'
-import { Mixer, type MixerState } from './engine/mixer'
+import { Mixer } from './engine/mixer'
 import { Sidekick } from './ui/Sidekick'
 import { Cable, type End } from './ui/Cable'
 import { Studio3D } from './scene3d/Studio3D'
-import knobsWoodUrl from './assets/knobs-wood.jpg'
+import knobsWoodUrl from './assets/knobs-wood.webp'
 import {
   SideDrawer,
   readHandStyle,
@@ -91,6 +91,12 @@ function loadStartDiscs(mounts: (HTMLElement | null)[], twoDecks: boolean) {
   })
 }
 
+/** The mixer panel follows the mixer's state itself, so its meters don't redraw the whole app. */
+function LiveSidekick({ mixer }: { mixer: Mixer }) {
+  const s = useSyncExternalStore(mixer.subscribe, mixer.getState)
+  return <Sidekick mixer={mixer} s={s} />
+}
+
 const outputs = ['bc1-out', 'bc2-out']
 const inputs: Record<string, Jack> = { 'sk-ch1': 0, 'sk-ch2': 1, 'sk-aux': 'aux' }
 const defaultCables = outputs.map((a, i) => ({ a, b: `sk-ch${i + 1}` }))
@@ -99,8 +105,6 @@ type Patch = Record<End, string | null>
 // the optional K.O.-sidekick mixer, created the first time it's added
 let mixer: Mixer | null = null
 const getMixer = () => (mixer ??= new Mixer())
-const noSub = () => () => {}
-const noState = () => null
 const CABLES_KEY = 'bc1.cables'
 const readCables = (): Patch[] => {
   try {
@@ -254,10 +258,6 @@ export default function App() {
   useEffect(() => {
     setProps((cur) => (cur ? ensureProps3D(cur, deckCount, mixerOn) : cur))
   }, [view, deckCount, mixerOn])
-  const ms = useSyncExternalStore<MixerState | null>(
-    mixerOn ? getMixer().subscribe : noSub,
-    mixerOn ? getMixer().getState : noState,
-  )
   const [cables, setCables] = useState<Patch[]>(readCables)
   const snapshotLayout = () => {
     const map = new Map<string, DOMRect>()
@@ -563,7 +563,7 @@ export default function App() {
           {decks.map((deck, i) => i < deckCount && (
             <Device key={i} deck={deck} index={i} output={outputs[i]} onSelect={() => { active.current = i }} onOpenLid={() => openLid(i)} />
           ))}
-          {mixerOn && ms && <Sidekick mixer={getMixer()} s={ms} />}
+          {mixerOn && <LiveSidekick mixer={getMixer()} />}
           {mixerOn && cables.slice(0, deckCount).map((cable, i) => {
             const preferred = defaultCables[i].b
             const otherB = deckCount === 2 ? cables[1 - i].b : null
