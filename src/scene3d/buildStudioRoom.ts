@@ -680,20 +680,26 @@ export function buildStudioRoom(): StudioRoomRig {
   joint(foot, 1.3)
   joint(elbow)
   joint(head, 1)
-  // shade: a dark cone opening down and forward, warm inside, with a bulb
+  // shade: a dark cone attached by its narrow cap at `head`, opening down and forward toward the gear
   const shadeGroup = new THREE.Group()
   shadeGroup.position.copy(head)
-  shadeGroup.rotation.z = -2.2
+  shadeGroup.rotation.z = 0.58
+  const shadeCap = new THREE.Mesh(
+    t.geo(new THREE.SphereGeometry(2.4, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.5)),
+    lampMetal,
+  )
+  shadeCap.position.y = 0.5
   const shade = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(2.4, 6.4, 10, 32, 1, true)), lampMetal)
-  shade.position.y = 4
+  shade.position.y = -4.5
   const shadeInnerMat = t.mat(new THREE.MeshStandardMaterial({ color: 0xf4efe4, emissive: 0xffc27a, emissiveIntensity: 0, side: THREE.BackSide, roughness: 0.8 }))
   const shadeInner = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(2.3, 6.25, 9.8, 32, 1, true)), shadeInnerMat)
-  shadeInner.position.y = 4
+  shadeInner.position.y = -4.5
   const bulbMat = t.mat(new THREE.MeshStandardMaterial({ color: 0xfff6e8, emissive: 0xffd9a0, emissiveIntensity: 0 }))
   const bulb = new THREE.Mesh(t.geo(new THREE.SphereGeometry(1.9, 20, 14)), bulbMat)
-  bulb.position.y = 5.5
+  bulb.position.y = -4.2
+  shadeCap.castShadow = true
   shade.castShadow = true
-  shadeGroup.add(shade, shadeInner, bulb)
+  shadeGroup.add(shadeCap, shade, shadeInner, bulb)
   lamp.add(lampBase, shadeGroup)
   lampBase.castShadow = lampBase.receiveShadow = true
   lamp.position.set(-46, 0, -24)
