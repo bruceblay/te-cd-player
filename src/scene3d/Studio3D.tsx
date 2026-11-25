@@ -426,21 +426,19 @@ export function Studio3D({
       if (controlsReady) applyDepth()
     }
     // Black light: the room switch dims everything to a violet glow and lights the UV paint.
-    // `blacklight` eases 0..1; switching on starts with a fluorescent-tube flicker.
+    // `blacklight` eases smoothly 0..1 both ways.
     let lightBase = { hemi: 0, key: 0, fill: 0, env: 0, fog: 0 }
     let blacklightOn = false
     let blacklight = 0
-    let flickerFrom = 0
     const fogDark = new THREE.Color(0x0d0718)
     const fogMix = new THREE.Color()
-    const applyBlacklight = (dt: number, now: number) => {
+    const applyBlacklight = (dt: number) => {
       const target = blacklightOn ? 1 : 0
       if (target === 0 && blacklight === 0) return
-      blacklight += (target - blacklight) * Math.min(1, dt * (blacklightOn ? 2.4 : 4))
+      blacklight += (target - blacklight) * Math.min(1, dt * 2.4)
       if (Math.abs(target - blacklight) < 0.002) blacklight = target
-      // while the tube strikes, the room lights stutter between on and off
-      const striking = blacklightOn && now - flickerFrom < 650
-      const level = striking ? (Math.random() < 0.5 ? 0.15 : 0.85) * Math.min(1, (now - flickerFrom) / 200) : blacklight
+      // ease in and out, so the change starts and lands gently
+      const level = blacklight * blacklight * (3 - 2 * blacklight)
       const room = 1 - 0.9 * level
       hemi.intensity = lightBase.hemi * room
       keyLight.intensity = lightBase.key * room
@@ -453,7 +451,6 @@ export function Studio3D({
     }
     const toggleBlacklight = () => {
       blacklightOn = !blacklightOn
-      flickerFrom = performance.now()
       studioRoom.setBlacklight(blacklight, blacklightOn)
       track('light_switch', { on: blacklightOn })
     }
@@ -1657,7 +1654,7 @@ export function Studio3D({
 
       const { decks: curDecks, mixer: curMixer, deckCount: dc, mixerOn: mOn, surface: curSurface } = propsRef.current
       applySurface(curSurface)
-      applyBlacklight(dt, now)
+      applyBlacklight(dt)
 
       const lp = layoutPositions(dc, mOn)
       const posLerp = Math.min(1, dt * 10)
