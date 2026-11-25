@@ -421,38 +421,37 @@ export function Studio3D({
       keyLight.intensity = isWood ? 1.65 : 1.55
       fillLight.intensity = isWood ? 0.46 : 0.42
       lightBase = { hemi: hemi.intensity, key: keyLight.intensity, fill: fillLight.intensity, env: scene.environmentIntensity, fog: bgHex }
-      // the black light belongs to the room: leaving it turns it off
-      if (!isWood) blacklightOn = false
+      // night belongs to the room: leaving it brings the daylight back
+      if (!isWood) nightOn = false
       if (controlsReady) applyDepth()
     }
-    // Black light: the room switch dims everything to a violet glow and lights the UV paint.
-    // `blacklight` eases smoothly 0..1 both ways.
+    // After hours: the room switch eases everything to night. The ceiling lights dim almost out,
+    // the window turns moonlit and the desk lamp and the gear's own displays light the desk.
     let lightBase = { hemi: 0, key: 0, fill: 0, env: 0, fog: 0 }
-    let blacklightOn = false
-    let blacklight = 0
-    const fogDark = new THREE.Color(0x0d0718)
+    let nightOn = false
+    let night = 0
+    const fogNight = new THREE.Color(0x0a0d18)
     const fogMix = new THREE.Color()
-    const applyBlacklight = (dt: number) => {
-      const target = blacklightOn ? 1 : 0
-      if (target === 0 && blacklight === 0) return
-      blacklight += (target - blacklight) * Math.min(1, dt * 2.4)
-      if (Math.abs(target - blacklight) < 0.002) blacklight = target
+    const applyNight = (dt: number) => {
+      const target = nightOn ? 1 : 0
+      if (target === 0 && night === 0) return
+      night += (target - night) * Math.min(1, dt * 2.4)
+      if (Math.abs(target - night) < 0.002) night = target
       // ease in and out, so the change starts and lands gently
-      const level = blacklight * blacklight * (3 - 2 * blacklight)
-      const room = 1 - 0.9 * level
+      const level = night * night * (3 - 2 * night)
+      const room = 1 - 0.88 * level
       hemi.intensity = lightBase.hemi * room
       keyLight.intensity = lightBase.key * room
       fillLight.intensity = lightBase.fill * room
-      scene.environmentIntensity = lightBase.env * (1 - 0.8 * level)
-      fogMix.setHex(lightBase.fog).lerp(fogDark, level)
+      scene.environmentIntensity = lightBase.env * (1 - 0.75 * level)
+      fogMix.setHex(lightBase.fog).lerp(fogNight, level)
       ;(scene.background as THREE.Color).copy(fogMix)
       ;(scene.fog as THREE.Fog).color.copy(fogMix)
-      studioRoom.setBlacklight(level, blacklightOn)
+      studioRoom.setNight(level)
     }
-    const toggleBlacklight = () => {
-      blacklightOn = !blacklightOn
-      studioRoom.setBlacklight(blacklight, blacklightOn)
-      track('light_switch', { on: blacklightOn })
+    const toggleNight = () => {
+      nightOn = !nightOn
+      track('night_mode', { on: nightOn })
     }
     const hitLightSwitch = (clientX: number, clientY: number) => {
       if (!studioRoom.group.visible) return false
@@ -1181,7 +1180,7 @@ export function Studio3D({
       if (e.button !== 0 && e.button !== 2) return
       const picked = pickScene(e.clientX, e.clientY)
       if (!picked && e.button === 0 && hitLightSwitch(e.clientX, e.clientY)) {
-        toggleBlacklight()
+        toggleNight()
         e.stopPropagation()
         e.preventDefault()
         return
@@ -1654,7 +1653,7 @@ export function Studio3D({
 
       const { decks: curDecks, mixer: curMixer, deckCount: dc, mixerOn: mOn, surface: curSurface } = propsRef.current
       applySurface(curSurface)
-      applyBlacklight(dt)
+      applyNight(dt)
 
       const lp = layoutPositions(dc, mOn)
       const posLerp = Math.min(1, dt * 10)

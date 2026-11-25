@@ -2,7 +2,6 @@ import { buildBookshelf } from './buildBookshelf'
 import * as THREE from 'three'
 import boredomsPrint from '../assets/room/seripop-boredoms-2005.jpg'
 import gardenPhoto from '../assets/room/garden-photo.jpg'
-import { uvPaintMaterial, uvPaintTexture, type UvSurface } from './uvPaint'
 import mineralPlaster from '../assets/room/mineral-plaster.webp'
 import acousticOak from '../assets/room/acoustic-oak.webp'
 import forestCollage from '../assets/room/forest-collage.webp'
@@ -13,10 +12,10 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 
 export interface StudioRoomRig {
   group: THREE.Group
-  /** the light switch by the door: clicking it toggles the black light */
+  /** the light switch by the door: clicking it turns the room to night and back */
   lightSwitch: THREE.Object3D
-  /** 0 = room lights, 1 = black light (UV paint glowing); `on` is the switch position */
-  setBlacklight: (level: number, on: boolean) => void
+  /** 0 = day, 1 = after hours: moonlit window and the desk lamp on */
+  setNight: (level: number) => void
   dispose: () => void
 }
 
@@ -582,11 +581,11 @@ export function buildStudioRoom(): StudioRoomRig {
   windowGlow.position.set(winCX + 4, 24, BACK_Z + 18)
   group.add(windowGlow)
 
-  // ---- Light switch and black light ----------------------------------------------------
+  // ---- Light switch ---------------------------------------------------------------------
   // A rocker plate by the latch side of the door, low enough to see when the camera turns round.
   const lightSwitch = new THREE.Group()
   lightSwitch.name = 'light-switch'
-  const plateMat = t.mat(new THREE.MeshStandardMaterial({ color: 0xf1ede4, roughness: 0.45, emissive: 0x6b3cff, emissiveIntensity: 0 }))
+  const plateMat = t.mat(new THREE.MeshStandardMaterial({ color: 0xf1ede4, roughness: 0.45 }))
   const plate = new THREE.Mesh(t.geo(new RoundedBoxGeometry(7.2, 11.6, 0.6, 3, 0.35)), plateMat)
   plate.castShadow = true
   const rocker = new THREE.Mesh(t.geo(new RoundedBoxGeometry(2.4, 4.4, 1.3, 3, 0.4)), plateMat)
@@ -598,72 +597,140 @@ export function buildStudioRoom(): StudioRoomRig {
     screw.position.set(0, sy * 4.4, 0.35)
     lightSwitch.add(screw)
   }
+  // a generous invisible hit area: the plate is small from across the room
+  const hitPad = new THREE.Mesh(
+    t.geo(new THREE.PlaneGeometry(18, 24)),
+    t.mat(new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false })),
+  )
+  hitPad.position.z = 0.4
+  lightSwitch.add(hitPad)
   lightSwitch.traverse((o) => (o.userData.lightSwitch = true))
   lightSwitch.rotation.y = Math.PI
   // 64 cm off the floor: the middle of the strip of wall a turned-round camera sees over the table
   lightSwitch.position.set(-62, -6, FRONT_Z - 0.35)
   group.add(lightSwitch)
 
-  // UV paint on every surface, gapped round the window, door and collage
-  const paintLayers: THREE.MeshBasicMaterial[] = []
-  const paint = (surface: UvSurface, w: number, h: number, holes: { x: number; y: number; w: number; h: number }[], place: (m: THREE.Mesh) => void) => {
-    const mat = t.mat(uvPaintMaterial(t.tex(uvPaintTexture(surface, w, h, holes))))
-    paintLayers.push(mat)
-    const m = new THREE.Mesh(t.geo(new THREE.PlaneGeometry(w, h)), mat)
-    m.renderOrder = 2
-    m.visible = false
-    place(m)
-    group.add(m)
-  }
-  const midY = (FLOOR_Y + CEIL_Y) / 2
-  const midZ = (BACK_Z + FRONT_Z) / 2
-  paint('back', ROOM_W, WALL_H, [{ x: winCX - winW / 2 + SIDE_X - 4, y: CEIL_Y - winCY - winH / 2 - 4, w: winW + 8, h: winH + 8 }], (m) =>
-    m.position.set(0, midY, BACK_Z + 0.25))
-  paint('front', ROOM_W, WALL_H, [{ x: SIDE_X - 50, y: CEIL_Y - (FLOOR_Y + 212), w: 100, h: 212 }], (m) => {
-    m.rotation.y = Math.PI
-    m.position.set(0, midY, FRONT_Z - 0.25)
-  })
-  paint('left', ROOM_D, WALL_H, [], (m) => {
-    m.rotation.y = Math.PI / 2
-    m.position.set(-SIDE_X + 0.35 + panelDepth + 0.15, midY, midZ)
-  })
-  paint('right', ROOM_D, WALL_H, [{ x: 40 - 3, y: CEIL_Y - 89.5 - 3, w: 66, h: 96 }], (m) => {
-    m.rotation.y = -Math.PI / 2
-    m.position.set(SIDE_X - 0.3, midY, midZ)
-  })
-  paint('ceiling', ROOM_W, ROOM_D, [], (m) => {
-    m.rotation.x = Math.PI / 2
-    m.position.set(0, CEIL_Y - 0.3, midZ)
-  })
+  // ---- After hours: the switch turns the room to night --------------------------------
+  // A small locator light in the switch glows once the room is dark
+  const locator = new THREE.Mesh(
+    t.geo(new THREE.CircleGeometry(0.32, 14)),
+    t.mat(new THREE.MeshBasicMaterial({ color: 0xffa24a, transparent: true, opacity: 0 })),
+  )
+  locator.position.set(0, -2.9, 0.33)
+  lightSwitch.add(locator)
 
-  // the black light itself: a violet tube on the ceiling and the glow it throws
-  const tubeMat = t.mat(new THREE.MeshStandardMaterial({ color: 0x2a2440, emissive: 0x7a3cff, emissiveIntensity: 0, roughness: 0.3 }))
-  const tube = new THREE.Mesh(t.geo(new THREE.CapsuleGeometry(1.6, 110, 6, 16)), tubeMat)
-  tube.rotation.z = Math.PI / 2
-  tube.position.set(0, CEIL_Y - 6, 20)
-  group.add(tube)
-  const uvLight = new THREE.PointLight(0x7a3cff, 0, 420, 1.1)
-  uvLight.position.set(0, CEIL_Y - 14, 20)
-  group.add(uvLight)
+  // Moon behind the window glass: a soft glow and a disc, only at night
+  const glowCanvas = document.createElement('canvas')
+  glowCanvas.width = glowCanvas.height = 128
+  {
+    const g = glowCanvas.getContext('2d')!
+    const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64)
+    grad.addColorStop(0, 'rgba(235,240,255,1)')
+    grad.addColorStop(0.18, 'rgba(225,232,255,0.85)')
+    grad.addColorStop(0.24, 'rgba(170,190,240,0.25)')
+    grad.addColorStop(1, 'rgba(120,140,210,0)')
+    g.fillStyle = grad
+    g.fillRect(0, 0, 128, 128)
+  }
+  const moonMat = t.mat(
+    new THREE.MeshBasicMaterial({
+      map: t.tex(new THREE.CanvasTexture(glowCanvas)),
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false,
+    }),
+  )
+  const moon = new THREE.Mesh(t.geo(new THREE.PlaneGeometry(34, 34)), moonMat)
+  moon.position.set(winCX + 20, winCY + 28, BACK_Z - 17.5)
+  moon.visible = false
+  group.add(moon)
+  const daylightColor = windowGlow.color.clone()
+  const moonlightColor = new THREE.Color(0x7b8fd0)
+  const skyDay = new THREE.Color(0xffffff)
+  const skyNight = new THREE.Color(0x26345e)
+
+  // Desk lamp: an architect-style lamp at the back left of the table, aimed at the gear
+  const lamp = new THREE.Group()
+  lamp.name = 'desk-lamp'
+  const lampMetal = t.mat(new THREE.MeshStandardMaterial({ color: 0x2b2b2c, metalness: 0.55, roughness: 0.42 }))
+  const lampBase = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(6.5, 7, 1.6, 40)), lampMetal)
+  lampBase.position.y = 0.8
+  const rod = (from: THREE.Vector3, to: THREE.Vector3, r = 0.55) => {
+    const len = from.distanceTo(to)
+    const m = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(r, r, len, 14)), lampMetal)
+    m.position.copy(from).lerp(to, 0.5)
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize())
+    m.castShadow = true
+    lamp.add(m)
+  }
+  const joint = (p: THREE.Vector3, r = 1.1) => {
+    const j = new THREE.Mesh(t.geo(new THREE.SphereGeometry(r, 16, 12)), lampMetal)
+    j.position.copy(p)
+    lamp.add(j)
+  }
+  const foot = new THREE.Vector3(0, 1.6, 0)
+  const elbow = new THREE.Vector3(6, 33, 0)
+  const head = new THREE.Vector3(27, 37, 0)
+  rod(foot, elbow)
+  rod(elbow, head)
+  joint(foot, 1.3)
+  joint(elbow)
+  joint(head, 1)
+  // shade: a dark cone opening down and forward, warm inside, with a bulb
+  const shadeGroup = new THREE.Group()
+  shadeGroup.position.copy(head)
+  shadeGroup.rotation.z = -2.2
+  const shade = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(2.4, 6.4, 10, 32, 1, true)), lampMetal)
+  shade.position.y = 4
+  const shadeInnerMat = t.mat(new THREE.MeshStandardMaterial({ color: 0xf4efe4, emissive: 0xffc27a, emissiveIntensity: 0, side: THREE.BackSide, roughness: 0.8 }))
+  const shadeInner = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(2.3, 6.25, 9.8, 32, 1, true)), shadeInnerMat)
+  shadeInner.position.y = 4
+  const bulbMat = t.mat(new THREE.MeshStandardMaterial({ color: 0xfff6e8, emissive: 0xffd9a0, emissiveIntensity: 0 }))
+  const bulb = new THREE.Mesh(t.geo(new THREE.SphereGeometry(1.9, 20, 14)), bulbMat)
+  bulb.position.y = 5.5
+  shade.castShadow = true
+  shadeGroup.add(shade, shadeInner, bulb)
+  lamp.add(lampBase, shadeGroup)
+  lampBase.castShadow = lampBase.receiveShadow = true
+  lamp.position.set(-46, 0, -24)
+  // turn the arm toward the gear
+  lamp.rotation.y = -Math.atan2(26, 40)
+  group.add(lamp)
+  // its light: a warm cone onto the desk, plus a little spill around the lamp
+  const lampLight = new THREE.SpotLight(0xffc98c, 0, 220, 0.78, 0.65, 1.2)
+  lamp.updateMatrixWorld(true)
+  lampLight.position.copy(bulb.getWorldPosition(new THREE.Vector3()))
+  lampLight.target.position.set(-4, 0, 4)
+  group.add(lampLight, lampLight.target)
+  const lampSpill = new THREE.PointLight(0xffb873, 0, 90, 1.6)
+  lampSpill.position.copy(lampLight.position)
+  group.add(lampSpill)
+
+  const setNight = (level: number) => {
+    // the outside goes to moonlit blue, the daylight through the window to faint moonlight
+    ;(skyPane.material as THREE.MeshBasicMaterial).color.copy(skyDay).lerp(skyNight, level)
+    windowGlow.color.copy(daylightColor).lerp(moonlightColor, level)
+    windowGlow.intensity = daylight * (1 - 0.82 * level)
+    moonMat.opacity = level
+    moon.visible = level > 0.01
+    // the lamp comes on
+    lampLight.intensity = level * 3000
+    lampSpill.intensity = level * 170
+    shadeInnerMat.emissiveIntensity = level * 1.6
+    bulbMat.emissiveIntensity = level * 4
+    ;(locator.material as THREE.MeshBasicMaterial).opacity = level
+    rocker.rotation.x = level > 0.5 ? -0.22 : 0.22
+  }
   const daylight = windowGlow.intensity
-
-  const setBlacklight = (level: number, on: boolean) => {
-    for (const m of paintLayers) m.opacity = level
-    for (const m of group.children) if ((m as THREE.Mesh).material && paintLayers.includes((m as THREE.Mesh).material as THREE.MeshBasicMaterial)) m.visible = level > 0.01
-    tubeMat.emissiveIntensity = level * 3.2
-    plateMat.emissiveIntensity = level * 0.35
-    uvLight.intensity = level * 900
-    windowGlow.intensity = daylight * (1 - 0.92 * level)
-    // the view outside darkens too, as if it were night
-    ;(skyPane.material as THREE.MeshBasicMaterial).color.setScalar(1 - 0.8 * level)
-    rocker.rotation.x = on ? -0.22 : 0.22
-  }
-  setBlacklight(0, false)
+  setNight(0)
 
   return {
     group,
     lightSwitch,
-    setBlacklight,
+    setNight,
     dispose() {
       t.dispose()
     },
