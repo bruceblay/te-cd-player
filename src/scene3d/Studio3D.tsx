@@ -1651,7 +1651,7 @@ export function Studio3D({
       }
       return anyAnimatingOrSpinning || anyDirty || propsChanged
     }
-    // is a self-animating item (lit candle, steaming tea) on screen?
+    // is a self-animating item (a lit candle) on screen?
     const ambientFrustum = new THREE.Frustum()
     const ambientMatrix = new THREE.Matrix4()
     const ambientSphere = new THREE.Sphere()
@@ -1674,7 +1674,7 @@ export function Studio3D({
     // A still scene isn't redrawn 60 times a second. Activity (deck and mixer state, the camera,
     // pointers, props, resizing) wakes the loop for a moment; motion that runs on its own (a
     // spinning disc, a roll, a camera move, the night fade) keeps it awake. Asleep, it only
-    // animates an on-screen lit candle or the tea's steam, at 20 fps, plus a once-a-second safety redraw.
+    // animates an on-screen lit candle's flame, at 20 fps, plus a once-a-second safety redraw.
     let awakeUntil = performance.now() + 3000
     let lastRender = 0
     let shadowDirty = true
@@ -1730,7 +1730,7 @@ export function Studio3D({
       lastTime = now
 
       if (now > awakeUntil) {
-        // asleep: animate an on-screen candle flame or tea steam at 20 fps, otherwise a slow safety redraw
+        // asleep: animate an on-screen candle flame at 20 fps, otherwise a slow safety redraw
         const ambient = propsAmbient()
         if (ambient ? now - lastRender < 50 : now - lastRender < 1000) return
         if (ambient) updateProps3D(Math.min(0.05, (now - lastRender) / 1000))

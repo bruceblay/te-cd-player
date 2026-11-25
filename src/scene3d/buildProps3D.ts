@@ -28,7 +28,7 @@ export interface PropRig3D {
   onClick?: () => void
   /** Advance animations (returns true while animating) */
   update: (dt: number) => boolean
-  /** True while the item animates on its own (a lit candle's flame, the tea's steam) */
+  /** True while the item animates on its own (a lit candle's flame) */
   ambient: () => boolean
   /** Dispose GPU geometries, materials, and textures */
   dispose: () => void
@@ -1422,7 +1422,7 @@ function buildCandle(t: ReturnType<typeof createTracker>): {
 
 /* ============================================================
    8. MATTE SPECKLED ARCHITECTURAL STONEWARE MUG OF TEA
-      (92 mm × 70 mm squat bevel-base body, solid tab handle, live steam!)
+      (92 mm × 70 mm squat bevel-base body, solid tab handle)
    ============================================================ */
 
 function makeStonewareGlazeTexture(): THREE.CanvasTexture {
@@ -1511,21 +1511,6 @@ function makeRawClayBaseTexture(): THREE.CanvasTexture {
   return tex
 }
 
-function makeSteamTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas')
-  c.width = 128
-  c.height = 128
-  const ctx = c.getContext('2d')!
-  const g = ctx.createRadialGradient(64, 64, 6, 64, 64, 58)
-  g.addColorStop(0, 'rgba(255, 252, 246, 0.34)')
-  g.addColorStop(0.5, 'rgba(255, 250, 244, 0.14)')
-  g.addColorStop(1, 'rgba(255, 250, 244, 0)')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, 128, 128)
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = THREE.SRGBColorSpace
-  return tex
-}
 
 function makeTeaSurfaceTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas')
@@ -1688,40 +1673,10 @@ function buildTeaMug(t: ReturnType<typeof createTracker>): {
   tag.rotation.y = Math.atan2(2.04, -4.84) + Math.PI / 2
   g.add(tag)
 
-  // 6. Gently rising translucent 3D steam puffs
-  const steamTex = t.tex(makeSteamTexture())
-  const puffs: { sprite: THREE.Sprite; mat: THREE.SpriteMaterial; age: number; offset: number }[] = []
-  for (let i = 0; i < 4; i++) {
-    const mat = t.mat(
-      new THREE.SpriteMaterial({
-        map: steamTex,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      }),
-    )
-    const sprite = new THREE.Sprite(mat)
-    sprite.position.set(0, 6.2, 0)
-    g.add(sprite)
-    puffs.push({ sprite, mat, age: i * 0.25, offset: i * 1.7 })
-  }
-
   return {
     group: g,
-    update(dt: number) {
-      for (const p of puffs) {
-        p.age = (p.age + dt * 0.24) % 1
-        const u = p.age
-        p.sprite.position.set(
-          Math.sin(u * Math.PI * 2 + p.offset) * 0.95,
-          6.1 + u * 6.5,
-          Math.cos(u * Math.PI * 1.6 + p.offset) * 0.8,
-        )
-        const s = 1.8 + u * 4.0
-        p.sprite.scale.set(s, s * 1.15, 1)
-        p.mat.opacity = Math.sin(u * Math.PI) * 0.4
-      }
-    },
+    // no steam: animating it kept the 3D scene redrawing while idle
+    update() {},
   }
 }
 
@@ -2097,7 +2052,6 @@ export function buildProp3D(id: PropId, initialFace = 1): PropRig3D {
     const m = buildTeaMug(tracker)
     body.add(m.group)
     ambientUpdate = m.update
-    ambientNow = () => true
   } else if (id === 'coaster') {
     body.add(buildCoaster(tracker))
   } else {
