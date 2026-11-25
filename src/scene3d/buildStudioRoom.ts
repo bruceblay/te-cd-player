@@ -508,6 +508,59 @@ export function buildStudioRoom(): StudioRoomRig {
   photo.rotation.y = Math.PI / 2
   photo.position.set(-SIDE_X + 0.35 + panelDepth + 0.8, 12, FRONT_Z - 3.5 * bayWidth)
 
+  // A way out: a panelled door in the middle of the bare wall behind the desk camera, with warm
+  // light from a hallway showing under it. Built facing +Z, then turned to face into the room.
+  {
+    const DOOR_W = 85, DOOR_H = 205, DOOR_D = 4
+    const door = new THREE.Group()
+    door.name = 'studio-door'
+    const paint = t.mat(new THREE.MeshStandardMaterial({ color: 0xe6e0d4, roughness: 0.62 }))
+    const casingMat = t.mat(new THREE.MeshStandardMaterial({ color: 0xdcd5c8, roughness: 0.6 }))
+    const brass = t.mat(new THREE.MeshStandardMaterial({ color: 0xb8975e, metalness: 0.75, roughness: 0.32 }))
+    const part = (w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material, r = 0.25) => {
+      const m = new THREE.Mesh(t.geo(new RoundedBoxGeometry(w, h, d, 2, r)), mat)
+      m.position.set(x, y, z)
+      m.castShadow = m.receiveShadow = true
+      door.add(m)
+      return m
+    }
+    // slab, then stiles and rails standing proud of it so the panels read as recessed
+    part(DOOR_W, DOOR_H, DOOR_D, 0, DOOR_H / 2, 0, paint, 0.3)
+    const proud = 0.7
+    const face = DOOR_D / 2 + proud / 2
+    for (const sx of [-1, 1]) part(12, DOOR_H, proud, sx * (DOOR_W / 2 - 6), DOOR_H / 2, face, paint, 0.2)
+    part(DOOR_W - 24, 12, proud, 0, DOOR_H - 6, face, paint, 0.2)
+    part(DOOR_W - 24, 16, proud, 0, 104, face, paint, 0.2)
+    part(DOOR_W - 24, 22, proud, 0, 11, face, paint, 0.2)
+    part(DOOR_W - 24, 3, proud * 0.6, 0, 50, face - proud * 0.2, paint, 0.15)
+    // casing round the opening
+    const casing = 7
+    for (const sx of [-1, 1]) part(casing, DOOR_H + casing, 1.8, sx * (DOOR_W / 2 + casing / 2), (DOOR_H + casing) / 2, -0.6, casingMat, 0.3)
+    part(DOOR_W + casing * 2, casing, 1.8, 0, DOOR_H + casing / 2, -0.6, casingMat, 0.3)
+    // brass lever on the latch side, toward the front of the room
+    const lx = DOOR_W / 2 - 7.5
+    part(3.2, 15, 0.6, lx, 100, DOOR_D / 2 + 0.3, brass, 0.25)
+    const rose = new THREE.Mesh(t.geo(new THREE.CylinderGeometry(1.25, 1.35, 2.2, 20)), brass)
+    rose.rotation.x = Math.PI / 2
+    rose.position.set(lx, 104, DOOR_D / 2 + 1.4)
+    door.add(rose)
+    const lever = new THREE.Mesh(t.geo(new THREE.CapsuleGeometry(0.75, 10, 6, 14)), brass)
+    lever.rotation.z = Math.PI / 2
+    lever.position.set(lx - 5.2, 104, DOOR_D / 2 + 2.4)
+    lever.castShadow = true
+    door.add(lever)
+    // hallway light under the door
+    const glow = new THREE.Mesh(
+      t.geo(new THREE.PlaneGeometry(DOOR_W - 4, 0.9)),
+      t.mat(new THREE.MeshBasicMaterial({ color: 0xffe2b0, transparent: true, opacity: 0.75 })),
+    )
+    glow.position.set(0, 0.45, DOOR_D / 2 + 0.05)
+    door.add(glow)
+    door.rotation.y = Math.PI
+    door.position.set(0, FLOOR_Y, FRONT_Z - 2.6)
+    group.add(door)
+  }
+
   // 6. Handbuilt OSB bookcase and cassette rack on Back-Right Wall
   const bookshelf = buildBookshelf(t, surfaceTexture)
   // 14.1 cm to the rear face, plus the 1.4 cm baseboard.
