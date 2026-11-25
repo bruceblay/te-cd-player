@@ -1,6 +1,6 @@
-The Boredoms gig poster is Frank Kozik’s KZ-9340 screen print for the Kennel Club, San Francisco, November 15, 1993. The framed reproduction uses the paper corners from the catalog photograph. Artwork © Frank Kozik. Reproduction rights have not been verified.
+The Boredoms gig poster is Seripop's (Yannick Desranleau and Chloe Lum) 2005 screen print for the Boredoms with Soft Circle in Montreal, 60 × 40 cm. The image is the Victoria and Albert Museum's scan (accession E.1257-2011, image 2011FC8345), cropped to the paper. Artwork © Seripop; image © Victoria and Albert Museum, London. Reproduction rights have not been verified.
 
-https://ctlgs.org/c/gigposters/poster/86221/boredoms-san-francisco-1993/
+https://collections.vam.ac.uk/item/O1274895/poster-desranleau--yannick
 
 The view through the studio window is a cropped, color-graded detail from Poly Haven’s Autumn Park panorama.
 

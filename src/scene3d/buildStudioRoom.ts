@@ -1,6 +1,6 @@
 import { buildBookshelf } from './buildBookshelf'
 import * as THREE from 'three'
-import boredomsPrint from '../assets/room/boredoms-kozik-1993.jpg'
+import boredomsPrint from '../assets/room/seripop-boredoms-2005.jpg'
 import mineralPlaster from '../assets/room/mineral-plaster.webp'
 import acousticOak from '../assets/room/acoustic-oak.webp'
 import forestCollage from '../assets/room/forest-collage.webp'
@@ -489,12 +489,6 @@ export function buildStudioRoom(): StudioRoomRig {
     const isGigPrint = variant === 'boredoms'
     const artTex = isGigPrint ? surfaceTexture(boredomsPrint) : t.tex(makeWavePrint())
     const paper = t.geo(new THREE.PlaneGeometry(w,h))
-    // Sample the four paper corners in the archive photograph, excluding its tabletop.
-    if (isGigPrint) {
-      paper.setAttribute('uv', new THREE.Float32BufferAttribute([
-        .029,.958, .975,.944, .039,.037, .96,.031,
-      ],2))
-    }
     const print = new THREE.Mesh(
       paper,
       t.mat(new THREE.MeshStandardMaterial({ map: artTex, roughness: 0.76, metalness: 0.0 })),
@@ -504,7 +498,7 @@ export function buildStudioRoom(): StudioRoomRig {
     group.add(fg)
   }
   // the gig poster hangs straight on the wall, behind the middle of the desk
-  addFramedArt('boredoms', 8, 24, 30, 30*57.2/44.5, 1.0)
+  addFramedArt('boredoms', 8, 26, 30, 45, 1.0)
   addFramedArt('wave', 68, 111, 17, 21.5, 1.0)
 
   // 6. Handbuilt OSB bookcase and cassette rack on Back-Right Wall
