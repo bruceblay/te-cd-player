@@ -235,7 +235,18 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
     const rightMin = gear.right + sideHalf + 4
     if (vw - minEdgeX > rightMin) addBand(rightMin, vw - minEdgeX, minEdgeY, vh - minEdgeY, def.aspect < 0.3)
   }
+  // the candle belongs at the top of the desk, above the gear
+  if (id === 'candle' && gear) {
+    const top = bands.filter((b) => b.y1 <= gear.top)
+    if (top.length) bands.splice(0, bands.length, ...top)
+  }
   const totalArea = bands.reduce((s, b) => s + b.area, 0)
+
+  // Spread items out: among several free spots, keep the one farthest from what's already placed
+  const spread: { x: number; y: number; rot: number; gap: number }[] = []
+  const SPREAD_TRIES = 10
+  const gapTo = (px: number, py: number) =>
+    existing.reduce((m, p) => Math.min(m, Math.hypot(px - (p.x / 100) * vw, py - (p.y / 100) * vh)), Infinity)
 
   const nearPx = near ? (near.x / 100) * vw : 0
   const nearPy = near ? (near.y / 100) * vh : 0
@@ -293,13 +304,19 @@ function randomSafeSpot(id: PropId, existing: PlacedProp[], near?: { x: number; 
     const { rx: erx, ry: ery } = extents(halfW, halfH, rot)
     const offscreen = px - erx < EDGE || px + erx > vw - EDGE || py - ery < EDGE || py + ery > vh - EDGE
     if (!inGear && !inMenu && !inProp && !offscreen && !near) {
-      return { id, x: (px / vw) * 100, y: (py / vh) * 100, rot, ...(face !== undefined ? { face } : {}) }
+      spread.push({ x: (px / vw) * 100, y: (py / vh) * 100, rot, gap: gapTo(px, py) })
+      if (spread.length >= SPREAD_TRIES) break
+      continue
     }
     const distPenalty = near ? Math.hypot(px - nearPx, py - nearPy) / Math.max(vw, vh) : 0
     const score = (inGear ? 100 : 0) + (offscreen ? 80 : 0) + (inMenu ? 50 : 0) + (inProp ? 20 : 0) + distPenalty
     if (!best || score < best.score) best = { x: Math.max(1, Math.min(99, (px / vw) * 100)), y: Math.max(1, Math.min(99, (py / vh) * 100)), rot, score }
   }
 
+  if (spread.length) {
+    const pick = spread.reduce((a, b) => (b.gap > a.gap ? b : a))
+    return { id, x: pick.x, y: pick.y, rot: pick.rot, ...(face !== undefined ? { face } : {}) }
+  }
   return best
     ? { id, x: best.x, y: best.y, rot: best.rot, ...(face !== undefined ? { face } : {}) }
     : { id, x: 8, y: 12, rot: 0, ...(face !== undefined ? { face } : {}) }
@@ -471,9 +488,9 @@ export function randomSafeSpot3D(
   const frameHalfX = Math.min(24.5, rigHW + (deckCount === 1 ? 10 : 0.8))
   const bands: { x0: number; x1: number; z0: number; z1: number; vertical: boolean; weight: number }[] = [
     // Front foreground of table (always super visible in desk, low & top angles!)
-    { x0: -frameHalfX + 2.5, x1: frameHalfX - 2.5, z0: rigHD + ext.halfD + 0.9, z1: rigHD + 10.5 - ext.halfD * 0.4, vertical: false, weight: 5 },
+    { x0: -frameHalfX + 4.5, x1: frameHalfX - 4.5, z0: rigHD + ext.halfD + 0.9, z1: rigHD + 10.5 - ext.halfD * 0.4, vertical: false, weight: 5 },
     // Rear behind patch cables (super visible in desk & top angles)
-    { x0: -frameHalfX + 2.5, x1: frameHalfX - 2.5, z0: -(rigHD + rearPad + 8.5) + ext.halfD * 0.4, z1: -(rigHD + rearPad + ext.halfD + 0.5), vertical: false, weight: 4 },
+    { x0: -frameHalfX + 4.5, x1: frameHalfX - 4.5, z0: -(rigHD + rearPad + 8.5) + ext.halfD * 0.4, z1: -(rigHD + rearPad + ext.halfD + 0.5), vertical: false, weight: 4 },
   ]
   if (deckCount === 1) {
     // 1-deck layouts have generous in-frame table space on both flanks
@@ -482,14 +499,20 @@ export function randomSafeSpot3D(
       { x0: rigHW + (isLong ? ext.halfD : ext.halfW) + 1.0, x1: maxX - (isLong ? ext.halfD : ext.halfW), z0: -rigHD, z1: rigHD, vertical: isLong, weight: 3 },
     )
   }
+  // the candle belongs at the top (far side) of the table, behind the gear
+  if (id === 'candle') bands.splice(0, bands.length, bands[1])
   const validBands = bands.filter((b) => b.x1 > b.x0 + 0.4 && b.z1 > b.z0 + 0.4)
   if (!validBands.length) {
     validBands.push({ x0: -21, x1: 21, z0: rigHD + 3.8, z1: rigHD + 9.2, vertical: false, weight: 1 })
   }
   const totalWeight = validBands.reduce((s, b) => s + b.weight, 0)
 
+  // Spread items out: among several free spots, keep the one farthest from what's already placed
+  const spread: { x3d: number; z3d: number; rot: number; gap: number }[] = []
+  const gapTo = (x: number, z: number) =>
+    existing.reduce((m, o) => (o.x3d === undefined || o.z3d === undefined ? m : Math.min(m, Math.hypot(x - o.x3d, z - o.z3d))), Infinity)
   let best: { x3d: number; z3d: number; rot: number; score: number } | null = null
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < 140 && spread.length < 10; i++) {
     let pick = Math.random() * totalWeight
     let b = validBands[validBands.length - 1]
     for (const cand of validBands) {
@@ -512,9 +535,16 @@ export function randomSafeSpot3D(
 
     const inRig = hitsRig(x, z, rot)
     const inOther = hitsOther(x, z)
-    if (!inRig && !inOther) return { x3d: x, z3d: z, rot }
+    if (!inRig && !inOther) {
+      spread.push({ x3d: x, z3d: z, rot, gap: gapTo(x, z) })
+      continue
+    }
     const score = (inRig ? 100 : 0) + (inOther ? 25 : 0) + Math.hypot(x, z) * 0.05
     if (!best || score < best.score) best = { x3d: x, z3d: z, rot, score }
+  }
+  if (spread.length) {
+    const pick = spread.reduce((a, b) => (b.gap > a.gap ? b : a))
+    return { x3d: pick.x3d, z3d: pick.z3d, rot: pick.rot }
   }
   return best ? { x3d: best.x3d, z3d: best.z3d, rot: best.rot } : { x3d: -rigHW - 4, z3d: 14, rot: 12 }
 }
@@ -534,7 +564,12 @@ export function ensureProps3D(props: PlacedProp[], deckCount: 1 | 2, mixerOn: bo
       // Only relocate automatically if it wasn't intentionally placed (keep user placements on CD/gear!)
       if (Math.abs(p.x3d!) > 54 || Math.abs(p.z3d!) > 30) needsSpot = true
     }
-    if (needsSpot) {
+    // a mug that needs a 3D spot goes on the coaster, which is placed first
+    const coaster = p.id === 'tea' ? placed.find((o) => o.id === 'coaster') : undefined
+    if (needsSpot && coaster && coaster.x3d !== undefined && coaster.z3d !== undefined) {
+      placed.push({ ...p, x3d: coaster.x3d, z3d: coaster.z3d })
+      changed = true
+    } else if (needsSpot) {
       const spot = randomSafeSpot3D(p.id, placed, deckCount, mixerOn)
       const next: PlacedProp = { ...p, x3d: spot.x3d, z3d: spot.z3d, rot: spot.rot }
       placed.push(next)
