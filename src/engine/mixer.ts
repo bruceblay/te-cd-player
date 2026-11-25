@@ -18,9 +18,16 @@ export type CompType = 'glue' | 'punch' | 'limit'
 export type Screen = 'main' | 'channel' | 'comp' | 'tempo' | 'fx' | 'settings' | 'level'
 export type Input = 'local' | 'stream' | null
 /** where captured stream audio goes: one stream's channel or aux, or the main mix when several streams share it */
-/** tab audio capture: Chromium desktop only */
+/**
+ * Tab audio capture: Chromium desktop only. Firefox and Safari can share a
+ * screen but not a tab's audio, so test for Chromium (only it has
+ * navigator.userAgentData), not just for getDisplayMedia.
+ */
 export const canCaptureTab = () =>
-  typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia && !matchMedia('(pointer: coarse)').matches
+  typeof navigator !== 'undefined' &&
+  'userAgentData' in navigator &&
+  !!navigator.mediaDevices?.getDisplayMedia &&
+  !matchMedia('(pointer: coarse)').matches
 
 export type CaptureRoute = '0' | '1' | 'aux' | 'sum' | 'none'
 type Ch = 0 | 1
